@@ -1,0 +1,24 @@
+{
+  "name": "in-ter-ference",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bleeptrack/in-ter-ference.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bleeptrack/in-ter-ference/issues"
+  },
+  "homepage": "https://github.com/bleeptrack/in-ter-ference#readme",
+  "dependencies": {
+    "feat": "^0.0.3",
+    "paper": "^0.12.18"
+  }
+}

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paper.js + feat.js Demo</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        
+        .demo-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .demo-section h2 {
+            margin-top: 0;
+            color: #555;
+        }
+        
+        #paper-canvas {
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            display: block;
+            margin: 10px auto;
+        }
+        
+        #webcam-video {
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            display: block;
+            margin: 10px auto;
+            max-width: 100%;
+        }
+        
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 10px;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Paper.js + feat.js Demo</h1>
+        
+        <div class="demo-section">
+            <h2>Paper.js Canvas</h2>
+            <canvas id="paper-canvas" width="800" height="400"></canvas>
+            <div class="controls">
+                <button id="clear-canvas">Clear Canvas</button>
+                <button id="draw-shapes">Draw Shapes</button>
+            </div>
+        </div>
+        
+        <div class="demo-section">
+            <h2>Webcam Feed (feat.js)</h2>
+            <video id="webcam-video" width="640" height="480" autoplay muted></video>
+            <div class="controls">
+                <button id="start-webcam">Start Webcam</button>
+                <button id="stop-webcam" disabled>Stop Webcam</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include Paper.js -->
+    <script type="text/javascript" src="node_modules/paper/dist/paper-full.min.js"></script>
+    
+    <!-- Include feat.js -->
+    <script type="text/javascript" src="node_modules/feat/feat.js"></script>
+    
+    <script>
+        // Paper.js setup
+        paper.install(window);
+        
+        // Initialize Paper.js when the page loads
+        window.onload = function() {
+            // Set up Paper.js canvas
+            const canvas = document.getElementById('paper-canvas');
+            paper.setup(canvas);
+            
+            // Create a simple drawing tool
+            const tool = new Tool();
+            
+            // Draw a circle when clicking
+            tool.onMouseDown = function(event) {
+                const circle = new Path.Circle({
+                    center: event.point,
+                    radius: 20,
+                    fillColor: 'orange'
+                });
+            };
+            
+            // Canvas controls
+            document.getElementById('clear-canvas').onclick = function() {
+                project.clear();
+            };
+            
+            document.getElementById('draw-shapes').onclick = function() {
+                // Draw some random shapes
+                for (let i = 0; i < 5; i++) {
+                    const rect = new Path.Rectangle({
+                        point: [Math.random() * 700, Math.random() * 300],
+                        size: [50, 50],
+                        fillColor: ['red', 'blue', 'green', 'yellow', 'purple'][i]
+                    });
+                }
+            };
+            
+            // Webcam setup
+            let stream = null;
+            
+            document.getElementById('start-webcam').onclick = function() {
+                navigator.mediaDevices.getUserMedia({ video: true })
+                    .then(function(mediaStream) {
+                        stream = mediaStream;
+                        const video = document.getElementById('webcam-video');
+                        video.srcObject = stream;
+                        
+                        document.getElementById('start-webcam').disabled = true;
+                        document.getElementById('stop-webcam').disabled = false;
+                        
+                        // Initialize feat.js when video starts playing
+                        video.onloadedmetadata = function() {
+                            // feat.js will be available here for face detection
+                            console.log('Webcam started, feat.js ready for face detection');
+                        };
+                    })
+                    .catch(function(err) {
+                        console.error('Error accessing webcam:', err);
+                        alert('Could not access webcam. Please check permissions.');
+                    });
+            };
+            
+            document.getElementById('stop-webcam').onclick = function() {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                    
+                    const video = document.getElementById('webcam-video');
+                    video.srcObject = null;
+                    
+                    document.getElementById('start-webcam').disabled = false;
+                    document.getElementById('stop-webcam').disabled = true;
+                }
+            };
+        };
+    </script>
+</body>
+</html>
