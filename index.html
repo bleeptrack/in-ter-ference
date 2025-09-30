@@ -92,62 +92,95 @@
         
         <div class="demo-section">
             <h2>Webcam Feed (feat.js)</h2>
-            <video id="webcam-video" width="640" height="480" autoplay muted></video>
+            <div style="position: relative; display: inline-block;">
+                <video id="webcam-video" width="640" height="480" autoplay muted></video>
+                <canvas id="overlay-canvas" width="640" height="480" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+            </div>
             <div class="controls">
                 <button id="start-webcam">Start Webcam</button>
                 <button id="stop-webcam" disabled>Stop Webcam</button>
+                <button id="select-points" disabled>Select 4 Points</button>
+                <button id="clear-points" disabled>Clear Points</button>
+                <button id="save-points" disabled>Save Points</button>
+                <button id="rectify" disabled>Rectify Trapezoid</button>
             </div>
+            <div id="point-status" style="margin-top: 10px; text-align: center; color: #666;">
+                Click on the video to select 4 points for trapezoid rectification
+            </div>
+        </div>
+        
+        <div class="demo-section" id="rectified-section" style="display: none;">
+            <h2>Rectified Output</h2>
+            <canvas id="rectified-canvas" width="640" height="480" style="border: 2px solid #ddd; border-radius: 4px; display: block; margin: 10px auto;"></canvas>
         </div>
     </div>
 
     <!-- Include Paper.js -->
     <script type="text/javascript" src="node_modules/paper/dist/paper-full.min.js"></script>
     
-    <!-- Include feat.js -->
-    <script type="text/javascript" src="node_modules/feat/feat.js"></script>
+    <!-- Include jsfeat -->
+    <script type="text/javascript" src="node_modules/jsfeat/build/jsfeat.js"></script>
     
     <script>
         // Paper.js setup
         paper.install(window);
         
-        // Initialize Paper.js when the page loads
-        window.onload = function() {
-            // Set up Paper.js canvas
-            const canvas = document.getElementById('paper-canvas');
-            paper.setup(canvas);
-            
-            // Create a simple drawing tool
-            const tool = new Tool();
-            
-            // Draw a circle when clicking
-            tool.onMouseDown = function(event) {
-                const circle = new Path.Circle({
-                    center: event.point,
-                    radius: 20,
-                    fillColor: 'orange'
-                });
-            };
-            
-            // Canvas controls
-            document.getElementById('clear-canvas').onclick = function() {
-                project.clear();
-            };
-            
-            document.getElementById('draw-shapes').onclick = function() {
-                // Draw some random shapes
-                for (let i = 0; i < 5; i++) {
-                    const rect = new Path.Rectangle({
-                        point: [Math.random() * 700, Math.random() * 300],
-                        size: [50, 50],
-                        fillColor: ['red', 'blue', 'green', 'yellow', 'purple'][i]
-                    });
-                }
-            };
-            
-            // Webcam setup
+            // Webcam setup and point selection - declare variables first
             let stream = null;
+            let selectedPoints = [];
+            let isSelectingPoints = false;
+            let overlayCanvas, overlayCtx;
+            let rectifiedCanvas, rectifiedCtx;
             
-            document.getElementById('start-webcam').onclick = function() {
+            // Initialize Paper.js when the page loads
+            window.onload = function() {
+                // Set up Paper.js canvas
+                const canvas = document.getElementById('paper-canvas');
+                paper.setup(canvas);
+                
+                // Create a simple drawing tool
+                const tool = new Tool();
+                
+                // Draw a circle when clicking
+                tool.onMouseDown = function(event) {
+                    const circle = new Path.Circle({
+                        center: event.point,
+                        radius: 20,
+                        fillColor: 'orange'
+                    });
+                };
+                
+                // Canvas controls
+                document.getElementById('clear-canvas').onclick = function() {
+                    project.clear();
+                };
+                
+                document.getElementById('draw-shapes').onclick = function() {
+                    // Draw some random shapes
+                    for (let i = 0; i < 5; i++) {
+                        const rect = new Path.Rectangle({
+                            point: [Math.random() * 700, Math.random() * 300],
+                            size: [50, 50],
+                            fillColor: ['red', 'blue', 'green', 'yellow', 'purple'][i]
+                        });
+                    }
+                };
+                
+                // Initialize overlay and rectified canvases
+                overlayCanvas = document.getElementById('overlay-canvas');
+                overlayCtx = overlayCanvas.getContext('2d');
+                
+                rectifiedCanvas = document.getElementById('rectified-canvas');
+                rectifiedCtx = rectifiedCanvas.getContext('2d');
+                
+                // Auto-start webcam
+                startWebcam();
+                
+                // Load saved points
+                loadSavedPoints();
+            };
+            
+            function startWebcam() {
                 navigator.mediaDevices.getUserMedia({ video: true })
                     .then(function(mediaStream) {
                         stream = mediaStream;
@@ -156,10 +189,10 @@
                         
                         document.getElementById('start-webcam').disabled = true;
                         document.getElementById('stop-webcam').disabled = false;
+                        document.getElementById('select-points').disabled = false;
                         
                         // Initialize feat.js when video starts playing
                         video.onloadedmetadata = function() {
-                            // feat.js will be available here for face detection
                             console.log('Webcam started, feat.js ready for face detection');
                         };
                     })
@@ -167,7 +200,9 @@
                         console.error('Error accessing webcam:', err);
                         alert('Could not access webcam. Please check permissions.');
                     });
-            };
+            }
+            
+            document.getElementById('start-webcam').onclick = startWebcam;
             
             document.getElementById('stop-webcam').onclick = function() {
                 if (stream) {
@@ -179,9 +214,452 @@
                     
                     document.getElementById('start-webcam').disabled = false;
                     document.getElementById('stop-webcam').disabled = true;
+                    document.getElementById('select-points').disabled = true;
+                    document.getElementById('clear-points').disabled = true;
+                    document.getElementById('rectify').disabled = true;
+                    
+                    // Clear points and overlay
+                    selectedPoints = [];
+                    isSelectingPoints = false;
+                    clearOverlay();
+                    updatePointStatus();
                 }
             };
-        };
+            
+            // Point selection functionality
+            document.getElementById('select-points').onclick = function() {
+                isSelectingPoints = true;
+                selectedPoints = [];
+                clearOverlay();
+                updatePointStatus();
+                
+                document.getElementById('select-points').disabled = true;
+                document.getElementById('clear-points').disabled = false;
+            };
+            
+            document.getElementById('clear-points').onclick = function() {
+                selectedPoints = [];
+                isSelectingPoints = false;
+                clearOverlay();
+                updatePointStatus();
+                
+                document.getElementById('select-points').disabled = false;
+                document.getElementById('clear-points').disabled = true;
+                document.getElementById('save-points').disabled = true;
+                document.getElementById('rectify').disabled = true;
+            };
+            
+            document.getElementById('save-points').onclick = function() {
+                savePoints();
+            };
+            
+            // Rectify button
+            document.getElementById('rectify').onclick = function() {
+                if (selectedPoints.length === 4) {
+                    performRectification();
+                }
+            };
+            
+            // Video click handler for point selection
+            document.getElementById('webcam-video').onclick = function(event) {
+                if (!isSelectingPoints || selectedPoints.length >= 4) return;
+                
+                const rect = event.target.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                selectedPoints.push({x: x, y: y});
+                drawPoint(x, y, selectedPoints.length);
+                updatePointStatus();
+                
+                if (selectedPoints.length === 4) {
+                    isSelectingPoints = false;
+                    document.getElementById('select-points').disabled = false;
+                    document.getElementById('save-points').disabled = false;
+                    document.getElementById('rectify').disabled = false;
+                    drawTrapezoid();
+                    
+                    // Auto-save points when 4 are selected
+                    savePoints();
+                }
+            };
+            
+            function drawPoint(x, y, number) {
+                overlayCtx.fillStyle = '#ff0000';
+                overlayCtx.beginPath();
+                overlayCtx.arc(x, y, 8, 0, 2 * Math.PI);
+                overlayCtx.fill();
+                
+                overlayCtx.fillStyle = '#ffffff';
+                overlayCtx.font = '12px Arial';
+                overlayCtx.textAlign = 'center';
+                overlayCtx.fillText(number, x, y + 4);
+            }
+            
+            function drawTrapezoid() {
+                if (selectedPoints.length !== 4) return;
+                
+                // Sort points to ensure proper order: top-left, top-right, bottom-right, bottom-left
+                const sortedPoints = sortPointsClockwise(selectedPoints);
+                
+                overlayCtx.strokeStyle = '#00ff00';
+                overlayCtx.lineWidth = 2;
+                overlayCtx.beginPath();
+                
+                for (let i = 0; i < 4; i++) {
+                    const point = sortedPoints[i];
+                    if (i === 0) {
+                        overlayCtx.moveTo(point.x, point.y);
+                    } else {
+                        overlayCtx.lineTo(point.x, point.y);
+                    }
+                }
+                overlayCtx.closePath();
+                overlayCtx.stroke();
+            }
+            
+            function sortPointsClockwise(points) {
+                // Calculate center point
+                const centerX = points.reduce((sum, p) => sum + p.x, 0) / 4;
+                const centerY = points.reduce((sum, p) => sum + p.y, 0) / 4;
+                
+                // Sort by angle from center
+                return points.sort((a, b) => {
+                    const angleA = Math.atan2(a.y - centerY, a.x - centerX);
+                    const angleB = Math.atan2(b.y - centerY, b.x - centerX);
+                    return angleA - angleB;
+                });
+            }
+            
+            function clearOverlay() {
+                overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            }
+            
+            function updatePointStatus() {
+                const status = document.getElementById('point-status');
+                if (isSelectingPoints) {
+                    status.textContent = `Select point ${selectedPoints.length + 1} of 4 (${selectedPoints.length}/4 selected)`;
+                } else if (selectedPoints.length === 4) {
+                    status.textContent = '4 points selected. Click "Rectify Trapezoid" to process.';
+                } else {
+                    status.textContent = 'Click "Select 4 Points" to start point selection.';
+                }
+            }
+            
+            function savePoints() {
+                if (selectedPoints.length === 4) {
+                    localStorage.setItem('savedPoints', JSON.stringify(selectedPoints));
+                    console.log('Points saved to localStorage');
+                }
+            }
+            
+            function loadSavedPoints() {
+                const saved = localStorage.getItem('savedPoints');
+                if (saved) {
+                    try {
+                        selectedPoints = JSON.parse(saved);
+                        console.log('Loaded saved points:', selectedPoints);
+                        
+                        // Redraw the points and trapezoid if we have 4 points
+                        if (selectedPoints.length === 4) {
+                            clearOverlay();
+                            for (let i = 0; i < selectedPoints.length; i++) {
+                                drawPoint(selectedPoints[i].x, selectedPoints[i].y, i + 1);
+                            }
+                            drawTrapezoid();
+                            updatePointStatus();
+                            
+                            // Enable rectify button
+                            document.getElementById('rectify').disabled = false;
+                        }
+                    } catch (e) {
+                        console.error('Error loading saved points:', e);
+                    }
+                }
+            }
+            
+            function performRectification() {
+                if (selectedPoints.length !== 4) {
+                    console.error('Need exactly 4 points for rectification');
+                    return;
+                }
+                
+                const video = document.getElementById('webcam-video');
+                const sourceCanvas = document.createElement('canvas');
+                const sourceCtx = sourceCanvas.getContext('2d');
+                
+                // Set source canvas size to match video
+                sourceCanvas.width = video.videoWidth;
+                sourceCanvas.height = video.videoHeight;
+                
+                // Draw current video frame to source canvas
+                sourceCtx.drawImage(video, 0, 0);
+                
+                // Get the source points (trapezoid corners)
+                const sortedPoints = sortPointsClockwise(selectedPoints);
+                
+                // Scale points to match video dimensions
+                const videoRect = video.getBoundingClientRect();
+                const scaleX = video.videoWidth / videoRect.width;
+                const scaleY = video.videoHeight / videoRect.height;
+                
+                const sourcePoints = sortedPoints.map(point => ({
+                    x: point.x * scaleX,
+                    y: point.y * scaleY
+                }));
+                
+                // Define destination points (rectangle corners)
+                const destWidth = rectifiedCanvas.width;
+                const destHeight = rectifiedCanvas.height;
+                const destPoints = [
+                    { x: 0, y: 0 },                    // top-left
+                    { x: destWidth, y: 0 },            // top-right
+                    { x: destWidth, y: destHeight },   // bottom-right
+                    { x: 0, y: destHeight }            // bottom-left
+                ];
+                
+                // Calculate perspective transformation matrix
+                const transformMatrix = calculatePerspectiveTransform(sourcePoints, destPoints);
+                
+                // Apply transformation to rectified canvas
+                applyPerspectiveTransform(sourceCanvas, rectifiedCanvas, transformMatrix, sourcePoints);
+                
+                // Show the rectified section
+                document.getElementById('rectified-section').style.display = 'block';
+                
+                console.log('Rectification completed');
+            }
+            
+            function calculatePerspectiveTransform(sourcePoints, destPoints) {
+                // Calculate perspective transformation matrix using 4-point correspondence
+                // This implements the standard perspective transformation algorithm
+                // We want to map FROM sourcePoints (trapezoid) TO destPoints (rectangle)
+                
+                const A = [];
+                const B = [];
+                
+                for (let i = 0; i < 4; i++) {
+                    const src = sourcePoints[i];
+                    const dst = destPoints[i];
+                    
+                    // Each point gives us 2 equations
+                    // We're solving: dest = transform(source)
+                    A.push([src.x, src.y, 1, 0, 0, 0, -dst.x * src.x, -dst.x * src.y]);
+                    A.push([0, 0, 0, src.x, src.y, 1, -dst.y * src.x, -dst.y * src.y]);
+                    
+                    B.push(dst.x);
+                    B.push(dst.y);
+                }
+                
+                // Solve the system of equations using Gaussian elimination
+                const h = solveLinearSystem(A, B);
+                
+                // Return transformation matrix
+                return [
+                    [h[0], h[1], h[2]],
+                    [h[3], h[4], h[5]],
+                    [h[6], h[7], 1]
+                ];
+            }
+            
+            function solveLinearSystem(A, B) {
+                // Simple Gaussian elimination for 8x8 system
+                const n = A.length;
+                
+                // Forward elimination
+                for (let i = 0; i < n; i++) {
+                    // Find pivot
+                    let maxRow = i;
+                    for (let k = i + 1; k < n; k++) {
+                        if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) {
+                            maxRow = k;
+                        }
+                    }
+                    
+                    // Swap rows
+                    [A[i], A[maxRow]] = [A[maxRow], A[i]];
+                    [B[i], B[maxRow]] = [B[maxRow], B[i]];
+                    
+                    // Make all rows below this one 0 in current column
+                    for (let k = i + 1; k < n; k++) {
+                        const factor = A[k][i] / A[i][i];
+                        for (let j = i; j < n; j++) {
+                            A[k][j] -= factor * A[i][j];
+                        }
+                        B[k] -= factor * B[i];
+                    }
+                }
+                
+                // Back substitution
+                const x = new Array(n);
+                for (let i = n - 1; i >= 0; i--) {
+                    x[i] = B[i];
+                    for (let j = i + 1; j < n; j++) {
+                        x[i] -= A[i][j] * x[j];
+                    }
+                    x[i] /= A[i][i];
+                }
+                
+                return x;
+            }
+            
+            function applyPerspectiveTransform(sourceCanvas, destCanvas, transformMatrix, sourcePoints) {
+                const sourceCtx = sourceCanvas.getContext('2d');
+                const destCtx = destCanvas.getContext('2d');
+                
+                // Clear destination canvas
+                destCtx.clearRect(0, 0, destCanvas.width, destCanvas.height);
+                
+                // Get source image data
+                const sourceImageData = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+                const destImageData = destCtx.createImageData(destCanvas.width, destCanvas.height);
+                
+                // We need to iterate through the source trapezoid and map to destination rectangle
+                // For each pixel in the source image, check if it's inside the trapezoid
+                // and if so, transform it to the destination rectangle
+                
+                for (let srcY = 0; srcY < sourceCanvas.height; srcY++) {
+                    for (let srcX = 0; srcX < sourceCanvas.width; srcX++) {
+                        // Check if this source pixel is inside the trapezoid
+                        if (isPointInTrapezoid(srcX, srcY, sourcePoints)) {
+                            // Transform this source point to destination coordinates
+                            const destPoint = transformPointForward(srcX, srcY, transformMatrix);
+                            
+                            // Check if destination point is within bounds
+                            if (destPoint.x >= 0 && destPoint.x < destCanvas.width &&
+                                destPoint.y >= 0 && destPoint.y < destCanvas.height) {
+                                
+                                // Get pixel from source
+                                const pixel = getPixel(sourceImageData, srcX, srcY, sourceCanvas.width);
+                                
+                                // Set pixel in destination (with bilinear interpolation for sub-pixel positions)
+                                const destX = Math.floor(destPoint.x);
+                                const destY = Math.floor(destPoint.y);
+                                
+                                if (destX >= 0 && destX < destCanvas.width && destY >= 0 && destY < destCanvas.height) {
+                                    const destIndex = (destY * destCanvas.width + destX) * 4;
+                                    destImageData.data[destIndex] = pixel.r;     // Red
+                                    destImageData.data[destIndex + 1] = pixel.g; // Green
+                                    destImageData.data[destIndex + 2] = pixel.b; // Blue
+                                    destImageData.data[destIndex + 3] = pixel.a; // Alpha
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Put the transformed image data to destination canvas
+                destCtx.putImageData(destImageData, 0, 0);
+            }
+            
+            function transformPoint(x, y, matrix) {
+                // Apply inverse perspective transformation
+                // For perspective transformation, we need to solve:
+                // [x'] = [h0 h1 h2] [x]
+                // [y']   [h3 h4 h5] [y]
+                // [w']   [h6 h7 h8] [1]
+                // Then x = x'/w', y = y'/w'
+                
+                const h = matrix;
+                const w = h[2][0] * x + h[2][1] * y + h[2][2];
+                
+                if (Math.abs(w) < 1e-10) {
+                    return { x: 0, y: 0 };
+                }
+                
+                const sourceX = (h[0][0] * x + h[0][1] * y + h[0][2]) / w;
+                const sourceY = (h[1][0] * x + h[1][1] * y + h[1][2]) / w;
+                
+                return { x: sourceX, y: sourceY };
+            }
+            
+            function getBilinearPixel(imageData, x, y, width, height) {
+                // Bilinear interpolation for smooth sampling
+                const x1 = Math.floor(x);
+                const y1 = Math.floor(y);
+                const x2 = Math.min(x1 + 1, width - 1);
+                const y2 = Math.min(y1 + 1, height - 1);
+                
+                const fx = x - x1;
+                const fy = y - y1;
+                
+                // Get the four surrounding pixels
+                const p1 = getPixel(imageData, x1, y1, width);
+                const p2 = getPixel(imageData, x2, y1, width);
+                const p3 = getPixel(imageData, x1, y2, width);
+                const p4 = getPixel(imageData, x2, y2, width);
+                
+                // Interpolate
+                const r = Math.round(
+                    p1.r * (1 - fx) * (1 - fy) +
+                    p2.r * fx * (1 - fy) +
+                    p3.r * (1 - fx) * fy +
+                    p4.r * fx * fy
+                );
+                
+                const g = Math.round(
+                    p1.g * (1 - fx) * (1 - fy) +
+                    p2.g * fx * (1 - fy) +
+                    p3.g * (1 - fx) * fy +
+                    p4.g * fx * fy
+                );
+                
+                const b = Math.round(
+                    p1.b * (1 - fx) * (1 - fy) +
+                    p2.b * fx * (1 - fy) +
+                    p3.b * (1 - fx) * fy +
+                    p4.b * fx * fy
+                );
+                
+                const a = Math.round(
+                    p1.a * (1 - fx) * (1 - fy) +
+                    p2.a * fx * (1 - fy) +
+                    p3.a * (1 - fx) * fy +
+                    p4.a * fx * fy
+                );
+                
+                return { r, g, b, a };
+            }
+            
+            function getPixel(imageData, x, y, width) {
+                const index = (y * width + x) * 4;
+                return {
+                    r: imageData.data[index],
+                    g: imageData.data[index + 1],
+                    b: imageData.data[index + 2],
+                    a: imageData.data[index + 3]
+                };
+            }
+            
+            function transformPointForward(x, y, matrix) {
+                // Apply forward perspective transformation: source -> destination
+                const h = matrix;
+                const w = h[2][0] * x + h[2][1] * y + h[2][2];
+                
+                if (Math.abs(w) < 1e-10) {
+                    return { x: 0, y: 0 };
+                }
+                
+                const destX = (h[0][0] * x + h[0][1] * y + h[0][2]) / w;
+                const destY = (h[1][0] * x + h[1][1] * y + h[1][2]) / w;
+                
+                return { x: destX, y: destY };
+            }
+            
+            function isPointInTrapezoid(x, y, points) {
+                // Check if point (x, y) is inside the trapezoid defined by the 4 points
+                // Using ray casting algorithm (point-in-polygon test)
+                
+                let inside = false;
+                for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+                    if (((points[i].y > y) !== (points[j].y > y)) &&
+                        (x < (points[j].x - points[i].x) * (y - points[i].y) / (points[j].y - points[i].y) + points[i].x)) {
+                        inside = !inside;
+                    }
+                }
+                return inside;
+            }
+            
     </script>
 </body>
 </html>
