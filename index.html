@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Paper.js + feat.js Demo</title>
     <style>
+        html,
         body {
+            height: 100%;
             margin: 0;
             padding: 20px;
             font-family: Arial, sans-serif;
@@ -41,6 +43,25 @@
             border-radius: 4px;
             display: block;
             margin: 10px auto;
+            transition: all 0.3s ease;
+        }
+        
+        /* Scale canvas with resize attribute to full size */
+        canvas[resize] {
+            width: 100%;
+            height: 100%;
+        }
+        
+        #paper-canvas.floating {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            margin: 0;
+            border: none;
+            border-radius: 0;
+            z-index: 9999;
         }
         
         #webcam-video {
@@ -83,10 +104,15 @@
         
         <div class="demo-section">
             <h2>Paper.js Canvas</h2>
-            <canvas id="paper-canvas" width="800" height="400"></canvas>
+            <canvas id="paper-canvas" resize width="800" height="400"></canvas>
             <div class="controls">
                 <button id="clear-canvas">Clear Canvas</button>
                 <button id="draw-shapes">Draw Shapes</button>
+                <button id="change-mode">Change Blend Mode</button>
+                <button id="change-speed">Change Speed</button>
+                <button id="regenerate-pattern">New Pattern</button>
+                <button id="change-colors">Change Colors</button>
+                <button id="toggle-float">Toggle Float</button>
             </div>
         </div>
         
@@ -103,6 +129,7 @@
                 <button id="clear-points" disabled>Clear Points</button>
                 <button id="save-points" disabled>Save Points</button>
                 <button id="rectify" disabled>Rectify Trapezoid</button>
+                <button id="toggle-edges" disabled>Toggle Edge Detection</button>
             </div>
             <div id="point-status" style="margin-top: 10px; text-align: center; color: #666;">
                 Click on the video to select 4 points for trapezoid rectification
@@ -121,6 +148,9 @@
     <!-- Include jsfeat -->
     <script type="text/javascript" src="node_modules/jsfeat/build/jsfeat.js"></script>
     
+    <!-- Include Sketch.js -->
+    <script type="text/javascript" src="Sketch.js"></script>
+    
     <script>
         // Paper.js setup
         paper.install(window);
@@ -134,12 +164,21 @@
             let isDragging = false;
             let draggedPointIndex = -1;
             let dragOffset = { x: 0, y: 0 };
+            let edgeDetectionEnabled = false;
             
             // Initialize Paper.js when the page loads
             window.onload = function() {
                 // Set up Paper.js canvas
                 const canvas = document.getElementById('paper-canvas');
                 paper.setup(canvas);
+                
+                // Initialize Sketch.js code
+                initializeSketch();
+                
+                // Call the sketch initialization after Paper.js is ready
+                if (window.sketchVars && window.sketchVars.init) {
+                    window.sketchVars.init();
+                }
                 
                 // Create a simple drawing tool
                 const tool = new Tool();
@@ -167,6 +206,87 @@
                             fillColor: ['red', 'blue', 'green', 'yellow', 'purple'][i]
                         });
                     }
+                };
+                
+                // Floating canvas functionality
+                let isFloating = false;
+                
+                function toggleFloat() {
+                    const canvas = document.getElementById('paper-canvas');
+                    
+                    if (!isFloating) {
+                        canvas.classList.add('floating');
+                        isFloating = true;
+                        console.log('Canvas is now floating');
+                    } else {
+                        canvas.classList.remove('floating');
+                        isFloating = false;
+                        console.log('Canvas returned to normal position');
+                    }
+                    
+                    // Trigger window resize event
+                    setTimeout(() => {
+                        if (window.fireEvent) {
+                            // IE
+                            window.fireEvent('onresize');
+                        } else {
+                            // Modern browsers
+                            const resizeEvent = document.createEvent('Event');
+                            resizeEvent.initEvent('resize', true, true);
+                            window.dispatchEvent(resizeEvent);
+                        }
+                    }, 100);
+                }
+                
+                // Button click handler
+                document.getElementById('toggle-float').onclick = toggleFloat;
+                
+                // Canvas click handler
+                document.getElementById('paper-canvas').onclick = function() {
+                    if (isFloating) {
+                        toggleFloat();
+                    }
+                };
+                
+                // Sketch.js variable controls
+                document.getElementById('change-mode').onclick = function() {
+                    const modes = ['difference', 'multiply', 'screen', 'overlay', 'soft-light'];
+                    const currentIndex = modes.indexOf(window.sketchVars.mode);
+                    const nextIndex = (currentIndex + 1) % modes.length;
+                    window.sketchVars.mode = modes[nextIndex];
+                    window.sketchVars.redraw();
+                    console.log('Blend mode changed to:', window.sketchVars.mode);
+                };
+                
+                document.getElementById('change-speed').onclick = function() {
+                    const speeds = [0.01, 0.05, 0.1, 0.2, 0.5];
+                    const currentIndex = speeds.indexOf(window.sketchVars.rotationSpeed);
+                    const nextIndex = (currentIndex + 1) % speeds.length;
+                    window.sketchVars.rotationSpeed = speeds[nextIndex];
+                    console.log('Rotation speed changed to:', window.sketchVars.rotationSpeed);
+                };
+                
+                document.getElementById('regenerate-pattern').onclick = function() {
+                    window.sketchVars.pattern = getRandomTest(10);
+                    window.sketchVars.redraw();
+                    console.log('New pattern generated:', window.sketchVars.pattern);
+                };
+                
+                document.getElementById('change-colors').onclick = function() {
+                    const colorSets = [
+                        ['white', 'red'],
+                        ['blue', 'yellow'],
+                        ['green', 'magenta'],
+                        ['cyan', 'orange'],
+                        ['purple', 'lime']
+                    ];
+                    const currentIndex = colorSets.findIndex(set => 
+                        set[0] === window.sketchVars.colors[0] && set[1] === window.sketchVars.colors[1]
+                    );
+                    const nextIndex = (currentIndex + 1) % colorSets.length;
+                    window.sketchVars.colors = colorSets[nextIndex];
+                    window.sketchVars.redraw();
+                    console.log('Colors changed to:', window.sketchVars.colors);
                 };
                 
                 // Initialize overlay and rectified canvases
@@ -225,6 +345,7 @@
                     document.getElementById('select-points').disabled = true;
                     document.getElementById('clear-points').disabled = true;
                     document.getElementById('rectify').disabled = true;
+                    document.getElementById('toggle-edges').disabled = true;
                     
                     // Clear points and overlay
                     selectedPoints = [];
@@ -267,6 +388,7 @@
                 document.getElementById('clear-points').disabled = true;
                 document.getElementById('save-points').disabled = true;
                 document.getElementById('rectify').disabled = true;
+                document.getElementById('toggle-edges').disabled = true;
             };
             
             document.getElementById('save-points').onclick = function() {
@@ -277,6 +399,17 @@
             document.getElementById('rectify').onclick = function() {
                 if (selectedPoints.length === 4) {
                     performRectification();
+                }
+            };
+            
+            // Toggle edge detection button
+            document.getElementById('toggle-edges').onclick = function() {
+                edgeDetectionEnabled = !edgeDetectionEnabled;
+                this.textContent = edgeDetectionEnabled ? 'Disable Edge Detection' : 'Toggle Edge Detection';
+                
+                // Update live rectification if we have 4 points
+                if (selectedPoints.length === 4) {
+                    updateLiveRectification();
                 }
             };
             
@@ -311,9 +444,10 @@
                 
                 if (selectedPoints.length === 4) {
                     isSelectingPoints = false;
-                    document.getElementById('select-points').disabled = false;
-                    document.getElementById('save-points').disabled = false;
-                    document.getElementById('rectify').disabled = false;
+                        document.getElementById('select-points').disabled = false;
+                        document.getElementById('save-points').disabled = false;
+                        document.getElementById('rectify').disabled = false;
+                        document.getElementById('toggle-edges').disabled = false;
                     drawTrapezoid();
                     
                     // Auto-save points when 4 are selected
@@ -461,6 +595,7 @@
                             
                             // Enable rectify button
                             document.getElementById('rectify').disabled = false;
+                            document.getElementById('toggle-edges').disabled = false;
                             
                             // Show rectified section and start live preview
                             document.getElementById('rectified-section').style.display = 'block';
@@ -550,6 +685,11 @@
                 
                 // Apply transformation to rectified canvas
                 applyPerspectiveTransform(sourceCanvas, rectifiedCanvas, inverseMatrix);
+                
+                // Apply Canny edge detection to the rectified output if enabled
+                if (edgeDetectionEnabled) {
+                    applyCannyEdgeDetection(rectifiedCanvas);
+                }
             }
             
             function performRectification() {
@@ -800,6 +940,46 @@
                 };
             }
             
+            function applyCannyEdgeDetection(canvas) {
+                const ctx = canvas.getContext('2d');
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                
+                // Create jsfeat matrices for processing
+                const src = new jsfeat.matrix_t(canvas.width, canvas.height, jsfeat.U8_t | jsfeat.C1_t);
+                const dst = new jsfeat.matrix_t(canvas.width, canvas.height, jsfeat.U8_t | jsfeat.C1_t);
+                
+                // Convert RGBA to grayscale
+                for (let i = 0; i < imageData.data.length; i += 4) {
+                    const r = imageData.data[i];
+                    const g = imageData.data[i + 1];
+                    const b = imageData.data[i + 2];
+                    // Convert to grayscale using luminance formula
+                    const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                    src.data[i / 4] = gray;
+                }
+                
+                // Apply Gaussian blur first (recommended before Canny)
+                const blurred = new jsfeat.matrix_t(canvas.width, canvas.height, jsfeat.U8_t | jsfeat.C1_t);
+                jsfeat.imgproc.gaussian_blur(src, blurred, 1.0);
+                
+                // Apply Canny edge detection
+                jsfeat.imgproc.canny(blurred, dst, 50, 150); // low threshold: 50, high threshold: 150
+                
+                // Convert back to RGBA and apply to canvas
+                const resultImageData = ctx.createImageData(canvas.width, canvas.height);
+                for (let i = 0; i < dst.data.length; i++) {
+                    const edgeValue = dst.data[i];
+                    const pixelIndex = i * 4;
+                    resultImageData.data[pixelIndex] = edgeValue;     // Red
+                    resultImageData.data[pixelIndex + 1] = edgeValue; // Green
+                    resultImageData.data[pixelIndex + 2] = edgeValue; // Blue
+                    resultImageData.data[pixelIndex + 3] = 255;       // Alpha
+                }
+                
+                // Put the edge-detected image back to canvas
+                ctx.putImageData(resultImageData, 0, 0);
+            }
+            
             function transformPointForward(x, y, matrix) {
                 // Apply forward perspective transformation: source -> destination
                 const h = matrix;
@@ -827,6 +1007,71 @@
                     }
                 }
                 return inside;
+            }
+            
+            // Initialize Sketch.js code
+            function initializeSketch() {
+                // Set background color
+                document.body.style.backgroundColor = 'black';
+                
+                // Access the global sketch variables
+                let mode = window.sketchVars.mode;
+                
+                function makePattern(pattern, height, rot, col){
+                    let groupHeight = pattern.length*2*height;
+                    let directionLine = new paper.Path.Line(paper.view.bounds.topLeft, paper.view.bounds.bottomRight);
+                    directionLine.strokeColor = "red";
+                    directionLine.rotate(rot);
+                    
+                    let patternGroup = new paper.Group();
+                    for(let [idx, i] of Object.entries(pattern)){
+                        let r = new paper.Path.Rectangle([0,idx*height], [paper.view.bounds.width*2, height]);
+                        r.fillColor = col;
+                        r.opacity = i;
+                        r.blendMode = window.sketchVars.mode;
+                        patternGroup.addChild(r);
+                    }
+                    for(let [idx, i] of Object.entries(pattern)){
+                        let r = new paper.Path.Rectangle([0,idx*height+groupHeight/2], [paper.view.bounds.width*2, height]);
+                        r.fillColor = col;
+                        r.opacity = pattern[pattern.length-idx-1];
+                        r.blendMode = window.sketchVars.mode;
+                        patternGroup.addChild(r);
+                    }
+                    patternGroup.rotate(directionLine.getNormalAt(10).angle);
+                    
+                    let patternSymbol = new paper.Symbol(patternGroup);
+                    for(let i = 0; i<directionLine.length;i+=groupHeight){
+                        console.log(i);
+                        patternSymbol.place(directionLine.getPointAt(i));
+                        console.log(directionLine.getTangentAt(i).angle);
+                    }
+                }
+
+                function getRandomTest(nr){
+                    let pattern = [];
+                    for(let i = 0; i<nr; i++){
+                        pattern.push(Math.round(Math.random()));
+                    }
+                    return pattern;
+                }
+
+                let p = getRandomTest(10);
+                makePattern(p, 40, 0, 'white');
+                makePattern(p, 40, 120, 'white');
+                makePattern(p, 40, 240, 'white');
+                    
+                makePattern(p, 100, 0, 'red');
+                makePattern(p, 100, 120, 'red');
+                makePattern(p, 100, 240, 'red');
+
+                // Set up the animation frame
+                function onFrame(e){
+                   view.rotate(0.05);
+                }
+                
+                // Start the animation
+                paper.view.onFrame = onFrame;
             }
             
     </script>

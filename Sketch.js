@@ -1,0 +1,113 @@
+document.body.style.backgroundColor = 'black'
+
+// Make variables globally accessible
+window.sketchVars = {
+    mode: "difference",
+    rotationSpeed: 0.05,
+    pattern: null,
+    colors: ['white', 'red'],
+    heights: [40, 100]
+}
+
+// For backward compatibility
+let mode = window.sketchVars.mode
+function makePattern(pattern, height, rot, col){
+    console.log('makePattern called with:', { pattern, height, rot, col });
+    console.log('View bounds:', paper.view.bounds);
+   
+    let groupHeight = pattern.length*2*height
+    let directionLine = new paper.Path.Line(paper.view.bounds.topLeft, paper.view.bounds.bottomRight)
+    directionLine.strokeColor = "red"
+    directionLine.rotate(rot)
+    
+    let patternGroup = new paper.Group()
+    for(let [idx, i] of Object.entries(pattern)){
+        let r = new paper.Path.Rectangle([0,idx*height], [paper.view.bounds.width*2, height])
+        r.fillColor = col
+        r.opacity = i
+        r.blendMode = window.sketchVars.mode;
+        patternGroup.addChild(r)
+    }
+    for(let [idx, i] of Object.entries(pattern)){
+        let r = new paper.Path.Rectangle([0,idx*height+groupHeight/2], [paper.view.bounds.width*2, height])
+        r.fillColor = col
+        r.opacity = pattern[pattern.length-idx-1]
+        r.blendMode = window.sketchVars.mode
+        patternGroup.addChild(r)
+    }
+    patternGroup.rotate(directionLine.getNormalAt(10).angle)
+    
+    let patternSymbol = new paper.Symbol(patternGroup)
+    for(let i = 0; i<directionLine.length;i+=groupHeight){
+        console.log(i)
+        patternSymbol.place(directionLine.getPointAt(i))
+        
+        console.log(directionLine.getTangentAt(i).angle)
+    }
+}
+
+function getRandomTest(nr){
+    let pattern = []
+    for(let i = 0; i<nr; i++){
+        pattern.push(Math.round(Math.random()))
+    }
+    return pattern
+}
+
+// Store pattern globally
+window.sketchVars.pattern = getRandomTest(10)
+
+// Function to regenerate and redraw patterns
+window.sketchVars.redraw = function() {
+    console.log('Redraw function called');
+    console.log('Paper.js view size:', paper.view.viewSize);
+    console.log('Pattern:', window.sketchVars.pattern);
+    
+    // Use paper scope to access project
+    paper.project.clear()
+    let p = window.sketchVars.pattern
+    console.log('Making patterns...');
+    
+    makePattern(p, window.sketchVars.heights[0], 0, window.sketchVars.colors[0])
+    makePattern(p, window.sketchVars.heights[0], 120, window.sketchVars.colors[0])
+    makePattern(p, window.sketchVars.heights[0], 240, window.sketchVars.colors[0])
+        
+    makePattern(p, window.sketchVars.heights[1], 0, window.sketchVars.colors[1])
+    makePattern(p, window.sketchVars.heights[1], 120, window.sketchVars.colors[1])
+    makePattern(p, window.sketchVars.heights[1], 240, window.sketchVars.colors[1])
+    
+    console.log('Patterns created, total items in project:', paper.project.activeLayer.children.length);
+    
+    // If no items were created, draw a simple test shape
+    if (paper.project.activeLayer.children.length === 0) {
+        console.log('No patterns created, drawing test circle...');
+        let testCircle = new paper.Path.Circle({
+            center: paper.view.center,
+            radius: 50,
+            fillColor: 'red'
+        });
+        console.log('Test circle created');
+    }
+}
+
+// Function to set up the animation frame
+window.sketchVars.setupAnimation = function() {
+    paper.view.onFrame = function(e) {
+        paper.view.rotate(window.sketchVars.rotationSpeed)
+    }
+}
+
+// Handle canvas resize
+window.sketchVars.onResize = function(event) {
+    console.log('Canvas resized to:', paper.view.viewSize);
+    // Let Paper.js handle the resize automatically
+}
+
+// Initial setup - this will be called after Paper.js is ready
+window.sketchVars.init = function() {
+    window.sketchVars.redraw()
+    window.sketchVars.setupAnimation()
+    
+    // Set up resize handler
+    paper.view.onResize = window.sketchVars.onResize
+}
