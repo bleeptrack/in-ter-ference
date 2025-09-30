@@ -418,11 +418,14 @@
                     { x: 0, y: destHeight }            // bottom-left
                 ];
                 
-                // Calculate perspective transformation matrix
+                // Calculate perspective transformation matrix (trapezoid -> rectangle)
                 const transformMatrix = calculatePerspectiveTransform(sourcePoints, destPoints);
                 
+                // Calculate inverse matrix (rectangle -> trapezoid) for sampling
+                const inverseMatrix = calculateInversePerspectiveTransform(transformMatrix);
+                
                 // Apply transformation to rectified canvas
-                applyPerspectiveTransform(sourceCanvas, rectifiedCanvas, transformMatrix, sourcePoints);
+                applyPerspectiveTransform(sourceCanvas, rectifiedCanvas, inverseMatrix);
                 
                 // Show the rectified section
                 document.getElementById('rectified-section').style.display = 'block';
@@ -460,6 +463,42 @@
                     [h[3], h[4], h[5]],
                     [h[6], h[7], 1]
                 ];
+            }
+            
+            function calculateInversePerspectiveTransform(matrix) {
+                // Calculate the inverse of a 3x3 perspective transformation matrix
+                const m = matrix;
+                
+                // Calculate determinant
+                const det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+                           m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+                           m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+                
+                if (Math.abs(det) < 1e-10) {
+                    console.error('Matrix is singular, cannot compute inverse');
+                    return matrix; // Return original matrix as fallback
+                }
+                
+                // Calculate inverse matrix
+                const inv = [
+                    [
+                        (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / det,
+                        (m[0][2] * m[2][1] - m[0][1] * m[2][2]) / det,
+                        (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / det
+                    ],
+                    [
+                        (m[1][2] * m[2][0] - m[1][0] * m[2][2]) / det,
+                        (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / det,
+                        (m[0][2] * m[1][0] - m[0][0] * m[1][2]) / det
+                    ],
+                    [
+                        (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / det,
+                        (m[0][1] * m[2][0] - m[0][0] * m[2][1]) / det,
+                        (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / det
+                    ]
+                ];
+                
+                return inv;
             }
             
             function solveLinearSystem(A, B) {
@@ -503,7 +542,7 @@
                 return x;
             }
             
-            function applyPerspectiveTransform(sourceCanvas, destCanvas, transformMatrix, sourcePoints) {
+            function applyPerspectiveTransform(sourceCanvas, destCanvas, inverseMatrix) {
                 const sourceCtx = sourceCanvas.getContext('2d');
                 const destCtx = destCanvas.getContext('2d');
                 
@@ -514,36 +553,27 @@
                 const sourceImageData = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
                 const destImageData = destCtx.createImageData(destCanvas.width, destCanvas.height);
                 
-                // We need to iterate through the source trapezoid and map to destination rectangle
-                // For each pixel in the source image, check if it's inside the trapezoid
-                // and if so, transform it to the destination rectangle
+                // Use inverse transformation: for each destination pixel, find where to sample from in source
+                // This ensures we fill every pixel in the destination with proper interpolation
                 
-                for (let srcY = 0; srcY < sourceCanvas.height; srcY++) {
-                    for (let srcX = 0; srcX < sourceCanvas.width; srcX++) {
-                        // Check if this source pixel is inside the trapezoid
-                        if (isPointInTrapezoid(srcX, srcY, sourcePoints)) {
-                            // Transform this source point to destination coordinates
-                            const destPoint = transformPointForward(srcX, srcY, transformMatrix);
+                for (let destY = 0; destY < destCanvas.height; destY++) {
+                    for (let destX = 0; destX < destCanvas.width; destX++) {
+                        // Transform destination point back to source coordinates (trapezoid)
+                        const sourcePoint = transformPointInverse(destX, destY, inverseMatrix);
+                        
+                        // Check if source point is within bounds
+                        if (sourcePoint.x >= 0 && sourcePoint.x < sourceCanvas.width &&
+                            sourcePoint.y >= 0 && sourcePoint.y < sourceCanvas.height) {
                             
-                            // Check if destination point is within bounds
-                            if (destPoint.x >= 0 && destPoint.x < destCanvas.width &&
-                                destPoint.y >= 0 && destPoint.y < destCanvas.height) {
-                                
-                                // Get pixel from source
-                                const pixel = getPixel(sourceImageData, srcX, srcY, sourceCanvas.width);
-                                
-                                // Set pixel in destination (with bilinear interpolation for sub-pixel positions)
-                                const destX = Math.floor(destPoint.x);
-                                const destY = Math.floor(destPoint.y);
-                                
-                                if (destX >= 0 && destX < destCanvas.width && destY >= 0 && destY < destCanvas.height) {
-                                    const destIndex = (destY * destCanvas.width + destX) * 4;
-                                    destImageData.data[destIndex] = pixel.r;     // Red
-                                    destImageData.data[destIndex + 1] = pixel.g; // Green
-                                    destImageData.data[destIndex + 2] = pixel.b; // Blue
-                                    destImageData.data[destIndex + 3] = pixel.a; // Alpha
-                                }
-                            }
+                            // Get pixel from source with bilinear interpolation
+                            const pixel = getBilinearPixel(sourceImageData, sourcePoint.x, sourcePoint.y, sourceCanvas.width, sourceCanvas.height);
+                            
+                            // Set pixel in destination
+                            const destIndex = (destY * destCanvas.width + destX) * 4;
+                            destImageData.data[destIndex] = pixel.r;     // Red
+                            destImageData.data[destIndex + 1] = pixel.g; // Green
+                            destImageData.data[destIndex + 2] = pixel.b; // Blue
+                            destImageData.data[destIndex + 3] = pixel.a; // Alpha
                         }
                     }
                 }
@@ -552,8 +582,8 @@
                 destCtx.putImageData(destImageData, 0, 0);
             }
             
-            function transformPoint(x, y, matrix) {
-                // Apply inverse perspective transformation
+            function transformPointInverse(x, y, matrix) {
+                // Apply inverse perspective transformation: destination -> source
                 // For perspective transformation, we need to solve:
                 // [x'] = [h0 h1 h2] [x]
                 // [y']   [h3 h4 h5] [y]
