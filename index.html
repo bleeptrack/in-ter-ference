@@ -131,6 +131,9 @@
             let isSelectingPoints = false;
             let overlayCanvas, overlayCtx;
             let rectifiedCanvas, rectifiedCtx;
+            let isDragging = false;
+            let draggedPointIndex = -1;
+            let dragOffset = { x: 0, y: 0 };
             
             // Initialize Paper.js when the page loads
             window.onload = function() {
@@ -194,6 +197,11 @@
                         // Initialize feat.js when video starts playing
                         video.onloadedmetadata = function() {
                             console.log('Webcam started, feat.js ready for face detection');
+                            
+                            // If we have saved points, start live rectification now that video is ready
+                            if (selectedPoints.length === 4) {
+                                startLiveRectification();
+                            }
                         };
                     })
                     .catch(function(err) {
@@ -223,6 +231,12 @@
                     isSelectingPoints = false;
                     clearOverlay();
                     updatePointStatus();
+                    
+                    // Stop live rectification
+                    stopLiveRectification();
+                    
+                    // Hide rectified section
+                    document.getElementById('rectified-section').style.display = 'none';
                 }
             };
             
@@ -243,6 +257,12 @@
                 clearOverlay();
                 updatePointStatus();
                 
+                // Stop live rectification
+                stopLiveRectification();
+                
+                // Hide rectified section
+                document.getElementById('rectified-section').style.display = 'none';
+                
                 document.getElementById('select-points').disabled = false;
                 document.getElementById('clear-points').disabled = true;
                 document.getElementById('save-points').disabled = true;
@@ -260,14 +280,31 @@
                 }
             };
             
-            // Video click handler for point selection
-            document.getElementById('webcam-video').onclick = function(event) {
-                if (!isSelectingPoints || selectedPoints.length >= 4) return;
+            // Video mouse event handlers for point selection and dragging
+            const video = document.getElementById('webcam-video');
                 
+            video.onmousedown = function(event) {
                 const rect = event.target.getBoundingClientRect();
                 const x = event.clientX - rect.left;
                 const y = event.clientY - rect.top;
                 
+                // Check if clicking on an existing point
+                if (selectedPoints.length > 0) {
+                    for (let i = 0; i < selectedPoints.length; i++) {
+                        const point = selectedPoints[i];
+                        const distance = Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2);
+                        if (distance <= 15) { // 15 pixel radius for dragging
+                            isDragging = true;
+                            draggedPointIndex = i;
+                            dragOffset.x = x - point.x;
+                            dragOffset.y = y - point.y;
+                            return;
+                        }
+                    }
+                }
+                
+                // If not dragging and in selection mode, add new point
+                if (isSelectingPoints && selectedPoints.length < 4) {
                 selectedPoints.push({x: x, y: y});
                 drawPoint(x, y, selectedPoints.length);
                 updatePointStatus();
@@ -281,6 +318,59 @@
                     
                     // Auto-save points when 4 are selected
                     savePoints();
+                        
+                        // Show rectified section and start live preview
+                        document.getElementById('rectified-section').style.display = 'block';
+                        startLiveRectification();
+                    }
+                }
+            };
+            
+            video.onmousemove = function(event) {
+                if (!isDragging) return;
+                
+                const rect = event.target.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                // Update the dragged point position
+                selectedPoints[draggedPointIndex].x = x - dragOffset.x;
+                selectedPoints[draggedPointIndex].y = y - dragOffset.y;
+                
+                // Redraw overlay
+                clearOverlay();
+                for (let i = 0; i < selectedPoints.length; i++) {
+                    drawPoint(selectedPoints[i].x, selectedPoints[i].y, i + 1);
+                }
+                if (selectedPoints.length === 4) {
+                    drawTrapezoid();
+                }
+                
+                // Update live rectification if we have 4 points
+                if (selectedPoints.length === 4) {
+                    updateLiveRectification();
+                }
+            };
+            
+            video.onmouseup = function(event) {
+                if (isDragging) {
+                    isDragging = false;
+                    draggedPointIndex = -1;
+                    dragOffset = { x: 0, y: 0 };
+                    
+                    // Save updated points
+                    if (selectedPoints.length === 4) {
+                        savePoints();
+                    }
+                }
+            };
+            
+            video.onmouseleave = function(event) {
+                // Stop dragging if mouse leaves the video area
+                if (isDragging) {
+                    isDragging = false;
+                    draggedPointIndex = -1;
+                    dragOffset = { x: 0, y: 0 };
                 }
             };
             
@@ -340,7 +430,7 @@
                 if (isSelectingPoints) {
                     status.textContent = `Select point ${selectedPoints.length + 1} of 4 (${selectedPoints.length}/4 selected)`;
                 } else if (selectedPoints.length === 4) {
-                    status.textContent = '4 points selected. Click "Rectify Trapezoid" to process.';
+                    status.textContent = '4 points selected. Drag points to adjust, or click "Rectify Trapezoid" to process.';
                 } else {
                     status.textContent = 'Click "Select 4 Points" to start point selection.';
                 }
@@ -371,6 +461,15 @@
                             
                             // Enable rectify button
                             document.getElementById('rectify').disabled = false;
+                            
+                            // Show rectified section and start live preview
+                            document.getElementById('rectified-section').style.display = 'block';
+                            
+                            // Start live rectification only if webcam is ready
+                            const video = document.getElementById('webcam-video');
+                            if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+                                startLiveRectification();
+                            }
                         }
                     } catch (e) {
                         console.error('Error loading saved points:', e);
@@ -378,13 +477,38 @@
                 }
             }
             
-            function performRectification() {
-                if (selectedPoints.length !== 4) {
-                    console.error('Need exactly 4 points for rectification');
-                    return;
+            let liveRectificationInterval = null;
+            
+            function startLiveRectification() {
+                // Start live rectification updates
+                if (liveRectificationInterval) {
+                    clearInterval(liveRectificationInterval);
                 }
                 
+                liveRectificationInterval = setInterval(() => {
+                    if (selectedPoints.length === 4) {
+                        updateLiveRectification();
+                    }
+                }, 100); // Update every 100ms for smooth live preview
+            }
+            
+            function stopLiveRectification() {
+                if (liveRectificationInterval) {
+                    clearInterval(liveRectificationInterval);
+                    liveRectificationInterval = null;
+                }
+            }
+            
+            function updateLiveRectification() {
+                if (selectedPoints.length !== 4) return;
+                
                 const video = document.getElementById('webcam-video');
+                
+                // Check if video is ready and has proper dimensions
+                if (!video || video.videoWidth === 0 || video.videoHeight === 0) {
+                    return; // Skip if video not ready
+                }
+                
                 const sourceCanvas = document.createElement('canvas');
                 const sourceCtx = sourceCanvas.getContext('2d');
                 
@@ -426,9 +550,19 @@
                 
                 // Apply transformation to rectified canvas
                 applyPerspectiveTransform(sourceCanvas, rectifiedCanvas, inverseMatrix);
+            }
+            
+            function performRectification() {
+                if (selectedPoints.length !== 4) {
+                    console.error('Need exactly 4 points for rectification');
+                    return;
+                }
                 
                 // Show the rectified section
                 document.getElementById('rectified-section').style.display = 'block';
+                
+                // Perform one-time rectification
+                updateLiveRectification();
                 
                 console.log('Rectification completed');
             }
@@ -545,6 +679,11 @@
             function applyPerspectiveTransform(sourceCanvas, destCanvas, inverseMatrix) {
                 const sourceCtx = sourceCanvas.getContext('2d');
                 const destCtx = destCanvas.getContext('2d');
+                
+                // Check if source canvas has valid dimensions
+                if (sourceCanvas.width === 0 || sourceCanvas.height === 0) {
+                    return; // Skip if source canvas is not ready
+                }
                 
                 // Clear destination canvas
                 destCtx.clearRect(0, 0, destCanvas.width, destCanvas.height);
