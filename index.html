@@ -179,7 +179,7 @@
             let perpendicularLineResults = [];
             
             // Threshold for detecting significant changes between readings
-            let changeThreshold = 20.0; // pixels
+            let changeThreshold = 100.0; // pixels
             
             // Visual debugging
             let visualDebugEnabled = false;
@@ -1043,25 +1043,34 @@
                 
                 if (perpendicularLineResults.length > 0) {
                     const lastDistances = perpendicularLineResults[perpendicularLineResults.length - 1].distances;
-                    hasSignificantChange = detectSignificantChange(distances, lastDistances);
+                    const changeResult = detectSignificantChange(distances, lastDistances);
+                    hasSignificantChange = changeResult.isSignificant;
                     
                     // Simple stability logic
                     if (hasSignificantChange) {
                         // Over threshold = change detected, activate stability check
-                        console.log(`📊 Change detected (threshold: ${changeThreshold}px) - stability check activated`);
+                        console.log(`📊 Change detected: total=${changeResult.totalChange.toFixed(1)}px, max=${changeResult.maxChange.toFixed(1)}px (threshold: ${changeThreshold}px) - stability check activated`);
                         stabilityReached = false; // Reset stability state
                         consecutiveStableReadings = 0; // Reset counter
                     } else {
                         // Under threshold = no change, count up if stability check is active
                         if (!stabilityReached) {
                             consecutiveStableReadings++;
-                            console.log(`✅ Stable reading ${consecutiveStableReadings}/${requiredStableReadings}`);
+                            console.log(`✅ Stable reading ${consecutiveStableReadings}/${requiredStableReadings} (total change: ${changeResult.totalChange.toFixed(1)}px)`);
                             
                             if (consecutiveStableReadings >= requiredStableReadings) {
                                 console.log(`🎯🎯🎯 STABILITY DETECTED! 🎯🎯🎯`);
                                 console.log(`📈 Readings have been stable for ${requiredStableReadings} consecutive measurements.`);
                                 console.log(`📋 Stable distances:`, distances);
                                 stabilityReached = true; // Mark stability as reached
+
+                                // Map values between 0 and 1 for topDistances and bottomDistances
+                                const maxTop = Math.max(...distances.map(d => d > 0 ? d : 0), 1);
+                                const maxBottom = Math.max(...distances.map(d => d < 0 ? -d : 0), 1);
+                                topDistances = distances.map(d => d > 0 ? (d / maxTop >= 0.5 ? 1 : 0) : 0);
+                                bottomDistances = distances.map(d => d < 0 ? ((-d) / maxBottom >= 0.5 ? 1 : 0) : 0);
+
+                                window.setPatterns(topDistances, bottomDistances);
                             }
                         }
                     }
@@ -1106,21 +1115,24 @@
             
             function detectSignificantChange(currentDistances, lastDistances) {
                 if (!lastDistances || currentDistances.length !== lastDistances.length) {
-                    return true; // Different lengths = significant change
+                    return { isSignificant: true, totalChange: Infinity }; // Different lengths = significant change
                 }
                 
-                // Check if any distance has changed by more than the threshold
+                // Calculate cumulative/total change across all distances
+                let totalChange = 0;
+                let maxChange = 0;
+                
                 for (let i = 0; i < currentDistances.length; i++) {
                     const currentDist = currentDistances[i];
                     const lastDist = lastDistances[i];
                     const change = Math.abs(currentDist - lastDist);
                     
-                    if (change >= changeThreshold) {
-                        return true; // Significant change detected
-                    }
+                    totalChange += change;
+                    maxChange = Math.max(maxChange, change);
                 }
                 
-                return false; // No significant changes
+                const isSignificant = totalChange >= changeThreshold;
+                return { isSignificant: isSignificant, totalChange: totalChange, maxChange: maxChange };
             }
             
             // Helper functions to access the saved results

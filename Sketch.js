@@ -1,4 +1,4 @@
-document.body.style.backgroundColor = 'black'
+//document.body.style.backgroundColor = 'black'
 
 // Make variables globally accessible
 window.sketchVars = {
@@ -54,27 +54,35 @@ function getRandomTest(nr){
     return pattern
 }
 
+window.setPatterns = function(pattern1, pattern2){
+    window.sketchVars.pattern = pattern1
+    window.sketchVars.pattern2 = pattern2
+    window.sketchVars.redraw()
+}
+
 // Store pattern globally
 window.sketchVars.pattern = getRandomTest(10)
+window.sketchVars.pattern2 = getRandomTest(10)
 
 // Function to regenerate and redraw patterns
 window.sketchVars.redraw = function() {
     console.log('Redraw function called');
     console.log('Paper.js view size:', paper.view.viewSize);
-    console.log('Pattern:', window.sketchVars.pattern);
+    //:', window.sketchVars.pattern);
     
     // Use paper scope to access project
     paper.project.clear()
     let p = window.sketchVars.pattern
+    let p2 = window.sketchVars.pattern2
     console.log('Making patterns...');
     
     makePattern(p, window.sketchVars.heights[0], 0, window.sketchVars.colors[0])
     makePattern(p, window.sketchVars.heights[0], 120, window.sketchVars.colors[0])
     makePattern(p, window.sketchVars.heights[0], 240, window.sketchVars.colors[0])
         
-    makePattern(p, window.sketchVars.heights[1], 0, window.sketchVars.colors[1])
-    makePattern(p, window.sketchVars.heights[1], 120, window.sketchVars.colors[1])
-    makePattern(p, window.sketchVars.heights[1], 240, window.sketchVars.colors[1])
+    makePattern(p2, window.sketchVars.heights[1], 0, window.sketchVars.colors[1])
+    makePattern(p2, window.sketchVars.heights[1], 120, window.sketchVars.colors[1])
+    makePattern(p2, window.sketchVars.heights[1], 240, window.sketchVars.colors[1])
     
     console.log('Patterns created, total items in project:', paper.project.activeLayer.children.length);
     
@@ -93,7 +101,8 @@ window.sketchVars.redraw = function() {
 // Function to set up the animation frame
 window.sketchVars.setupAnimation = function() {
     paper.view.onFrame = function(e) {
-        paper.view.rotate(window.sketchVars.rotationSpeed)
+        // Use frame delta for smooth rotation independent of frame rate
+        paper.view.rotate(window.sketchVars.rotationSpeed * 10 * e.delta)
     }
 }
 
