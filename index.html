@@ -166,6 +166,29 @@
             let dragOffset = { x: 0, y: 0 };
             let edgeDetectionEnabled = false;
             
+            // Variables for draggable points on rectified canvas
+            let rectifiedPoints = [
+                { x: 100, y: 100 }, // First point
+                { x: 300, y: 200 }  // Second point
+            ];
+            let isDraggingRectifiedPoint = false;
+            let draggedRectifiedPointIndex = -1;
+            let rectifiedDragOffset = { x: 0, y: 0 };
+            
+            // Array to store perpendicular line analysis results
+            let perpendicularLineResults = [];
+            
+            // Threshold for detecting significant changes between readings
+            let changeThreshold = 20.0; // pixels
+            
+            // Visual debugging
+            let visualDebugEnabled = false;
+            
+            // Stability detection
+            let consecutiveStableReadings = 0;
+            let requiredStableReadings = 3;
+            let stabilityReached = false; // Track if stability has been achieved
+            
             // Initialize Paper.js when the page loads
             window.onload = function() {
                 // Set up Paper.js canvas
@@ -296,6 +319,9 @@
                 rectifiedCanvas = document.getElementById('rectified-canvas');
                 rectifiedCtx = rectifiedCanvas.getContext('2d');
                 
+                // Add mouse event handlers for rectified canvas
+                setupRectifiedCanvasInteraction();
+                
                 // Auto-start webcam
                 startWebcam();
                 
@@ -407,9 +433,9 @@
                 edgeDetectionEnabled = !edgeDetectionEnabled;
                 this.textContent = edgeDetectionEnabled ? 'Disable Edge Detection' : 'Toggle Edge Detection';
                 
-                // Update live rectification if we have 4 points
-                if (selectedPoints.length === 4) {
-                    updateLiveRectification();
+                // If edge detection is enabled, apply it immediately
+                if (edgeDetectionEnabled && selectedPoints.length === 4) {
+                    updateEdgeDetection();
                 }
             };
             
@@ -448,14 +474,27 @@
                         document.getElementById('save-points').disabled = false;
                         document.getElementById('rectify').disabled = false;
                         document.getElementById('toggle-edges').disabled = false;
+                        
+                        // Automatically enable edge detection
+                        edgeDetectionEnabled = true;
+                        document.getElementById('toggle-edges').textContent = 'Disable Edge Detection';
                     drawTrapezoid();
                     
                     // Auto-save points when 4 are selected
                     savePoints();
                         
-                        // Show rectified section and start live preview
-                        document.getElementById('rectified-section').style.display = 'block';
-                        startLiveRectification();
+                            // Show rectified section and start live preview
+                            document.getElementById('rectified-section').style.display = 'block';
+                            startLiveRectification();
+                            
+                            // Draw the draggable points and line
+                            setTimeout(() => {
+                                drawRectifiedPointsAndLine();
+                            }, 100);
+                            
+                            // Initialize stability detection for new points
+                            console.log(`🔄 Stability detection initialized for new points`);
+                            console.log(`📊 Current threshold: ${changeThreshold}px, Required stable readings: ${requiredStableReadings}`);
                     }
                 }
             };
@@ -577,6 +616,11 @@
                 }
             }
             
+            function saveRectifiedPoints() {
+                localStorage.setItem('savedRectifiedPoints', JSON.stringify(rectifiedPoints));
+                console.log('Rectified points saved to localStorage');
+            }
+            
             function loadSavedPoints() {
                 const saved = localStorage.getItem('savedPoints');
                 if (saved) {
@@ -597,6 +641,10 @@
                             document.getElementById('rectify').disabled = false;
                             document.getElementById('toggle-edges').disabled = false;
                             
+                            // Automatically enable edge detection
+                            edgeDetectionEnabled = true;
+                            document.getElementById('toggle-edges').textContent = 'Disable Edge Detection';
+                            
                             // Show rectified section and start live preview
                             document.getElementById('rectified-section').style.display = 'block';
                             
@@ -604,15 +652,45 @@
                             const video = document.getElementById('webcam-video');
                             if (video && video.videoWidth > 0 && video.videoHeight > 0) {
                                 startLiveRectification();
+                                
+                                // Draw the draggable points and line
+                                setTimeout(() => {
+                                    drawRectifiedPointsAndLine();
+                                }, 100);
+                                
+                                // Initialize stability detection for loaded points
+                                console.log(`🔄 Stability detection initialized on page load`);
+                                console.log(`📊 Current threshold: ${changeThreshold}px, Required stable readings: ${requiredStableReadings}`);
                             }
                         }
                     } catch (e) {
                         console.error('Error loading saved points:', e);
                     }
                 }
+                
+                // Load saved rectified points
+                loadSavedRectifiedPoints();
+            }
+            
+            function loadSavedRectifiedPoints() {
+                const saved = localStorage.getItem('savedRectifiedPoints');
+                if (saved) {
+                    try {
+                        rectifiedPoints = JSON.parse(saved);
+                        console.log('Loaded saved rectified points:', rectifiedPoints);
+                    } catch (e) {
+                        console.error('Error loading saved rectified points:', e);
+                        // Reset to default positions if loading fails
+                        rectifiedPoints = [
+                            { x: 100, y: 100 },
+                            { x: 300, y: 200 }
+                        ];
+                    }
+                }
             }
             
             let liveRectificationInterval = null;
+            let edgeDetectionInterval = null;
             
             function startLiveRectification() {
                 // Start live rectification updates
@@ -623,14 +701,26 @@
                 liveRectificationInterval = setInterval(() => {
                     if (selectedPoints.length === 4) {
                         updateLiveRectification();
+                        updateEdgeDetection();
                     }
-                }, 100); // Update every 100ms for smooth live preview
+                }, 1000); // Update every 100ms for smooth live preview
+                
+                // Start edge detection updates (less frequent)
+                if (edgeDetectionInterval) {
+                    clearInterval(edgeDetectionInterval);
+                }
+                
+                
             }
             
             function stopLiveRectification() {
                 if (liveRectificationInterval) {
                     clearInterval(liveRectificationInterval);
                     liveRectificationInterval = null;
+                }
+                if (edgeDetectionInterval) {
+                    clearInterval(edgeDetectionInterval);
+                    edgeDetectionInterval = null;
                 }
             }
             
@@ -686,11 +776,558 @@
                 // Apply transformation to rectified canvas
                 applyPerspectiveTransform(sourceCanvas, rectifiedCanvas, inverseMatrix);
                 
-                // Apply Canny edge detection to the rectified output if enabled
-                if (edgeDetectionEnabled) {
-                    applyCannyEdgeDetection(rectifiedCanvas);
+                // Note: Edge detection is now handled separately by updateEdgeDetection()
+            }
+            
+            function updateEdgeDetection() {
+                if (selectedPoints.length !== 4 || !edgeDetectionEnabled) return;
+                
+                // Apply Canny edge detection to the current rectified canvas
+                applyCannyEdgeDetection(rectifiedCanvas);
+                
+                // Analyze perpendicular lines for outermost white pixels BEFORE drawing lines
+                analyzePerpendicularLines();
+                
+                // Redraw the draggable points and line after analysis
+                drawRectifiedPointsAndLine();
+            }
+            
+            function setupRectifiedCanvasInteraction() {
+                rectifiedCanvas.onmousedown = function(event) {
+                    const rect = event.target.getBoundingClientRect();
+                    const x = event.clientX - rect.left;
+                    const y = event.clientY - rect.top;
+                    
+                    // Check if clicking on an existing draggable point
+                    for (let i = 0; i < rectifiedPoints.length; i++) {
+                        const point = rectifiedPoints[i];
+                        const distance = Math.sqrt((x - point.x) ** 2 + (y - point.y) ** 2);
+                        if (distance <= 15) { // 15 pixel radius for dragging
+                            isDraggingRectifiedPoint = true;
+                            draggedRectifiedPointIndex = i;
+                            rectifiedDragOffset.x = x - point.x;
+                            rectifiedDragOffset.y = y - point.y;
+                            return;
+                        }
+                    }
+                };
+                
+                rectifiedCanvas.onmousemove = function(event) {
+                    if (!isDraggingRectifiedPoint) return;
+                    
+                    const rect = event.target.getBoundingClientRect();
+                    const x = event.clientX - rect.left;
+                    const y = event.clientY - rect.top;
+                    
+                    // Update the dragged point position
+                    rectifiedPoints[draggedRectifiedPointIndex].x = x - rectifiedDragOffset.x;
+                    rectifiedPoints[draggedRectifiedPointIndex].y = y - rectifiedDragOffset.y;
+                    
+                    // Redraw the points and line
+                    drawRectifiedPointsAndLine();
+                    
+                    // Save the updated points position
+                    saveRectifiedPoints();
+                };
+                
+                rectifiedCanvas.onmouseup = function(event) {
+                    if (isDraggingRectifiedPoint) {
+                        isDraggingRectifiedPoint = false;
+                        draggedRectifiedPointIndex = -1;
+                        rectifiedDragOffset = { x: 0, y: 0 };
+                    }
+                };
+                
+                rectifiedCanvas.onmouseleave = function(event) {
+                    // Stop dragging if mouse leaves the canvas area
+                    if (isDraggingRectifiedPoint) {
+                        isDraggingRectifiedPoint = false;
+                        draggedRectifiedPointIndex = -1;
+                        rectifiedDragOffset = { x: 0, y: 0 };
+                    }
+                };
+            }
+            
+            function drawRectifiedPointsAndLine() {
+                // Only draw if we have rectified content (4 points selected)
+                if (selectedPoints.length !== 4) return;
+                
+                // Draw line between the two points
+                rectifiedCtx.strokeStyle = '#00ff00';
+                rectifiedCtx.lineWidth = 3;
+                rectifiedCtx.beginPath();
+                rectifiedCtx.moveTo(rectifiedPoints[0].x, rectifiedPoints[0].y);
+                rectifiedCtx.lineTo(rectifiedPoints[1].x, rectifiedPoints[1].y);
+                rectifiedCtx.stroke();
+                
+                // Calculate the main line vector and perpendicular direction
+                const dx = rectifiedPoints[1].x - rectifiedPoints[0].x;
+                const dy = rectifiedPoints[1].y - rectifiedPoints[0].y;
+                const mainLineLength = Math.sqrt(dx * dx + dy * dy);
+                
+                // Calculate perpendicular vector (rotated 90 degrees)
+                const perpX = -dy / mainLineLength;
+                const perpY = dx / mainLineLength;
+                
+                // Draw perpendicular lines (only for visual reference, not used in analysis)
+                const numLines = 20;
+                rectifiedCtx.strokeStyle = '#ff00ff'; // Magenta color for perpendicular lines
+                rectifiedCtx.lineWidth = 1;
+                
+                for (let i = 1; i < numLines; i++) {
+                    // Calculate position along the main line
+                    const t = i / numLines;
+                    const x = rectifiedPoints[0].x + t * dx;
+                    const y = rectifiedPoints[0].y + t * dy;
+                    
+                    // Calculate perpendicular line endpoints
+                    const lineLength = 500; // Length of perpendicular lines
+                    const startX = x - perpX * lineLength / 2;
+                    const startY = y - perpY * lineLength / 2;
+                    const endX = x + perpX * lineLength / 2;
+                    const endY = y + perpY * lineLength / 2;
+                    
+                    // Draw perpendicular line
+                    rectifiedCtx.beginPath();
+                    rectifiedCtx.moveTo(startX, startY);
+                    rectifiedCtx.lineTo(endX, endY);
+                    rectifiedCtx.stroke();
+                }
+                
+                // Draw the two draggable points
+                rectifiedPoints.forEach((point, index) => {
+                    // Draw point circle
+                    rectifiedCtx.fillStyle = '#ff0000';
+                    rectifiedCtx.beginPath();
+                    rectifiedCtx.arc(point.x, point.y, 10, 0, 2 * Math.PI);
+                    rectifiedCtx.fill();
+                    
+                    // Draw point border
+                    rectifiedCtx.strokeStyle = '#ffffff';
+                    rectifiedCtx.lineWidth = 2;
+                    rectifiedCtx.stroke();
+                    
+                    // Draw point number
+                    rectifiedCtx.fillStyle = '#ffffff';
+                    rectifiedCtx.font = 'bold 14px Arial';
+                    rectifiedCtx.textAlign = 'center';
+                    rectifiedCtx.textBaseline = 'middle';
+                    rectifiedCtx.fillText((index + 1).toString(), point.x, point.y);
+                });
+            }
+            
+            function analyzePerpendicularLines() {
+                // Only analyze if we have rectified content and edge detection is enabled
+                if (selectedPoints.length !== 4 || !edgeDetectionEnabled) return;
+                
+                // Get the edge-detected image data BEFORE any perpendicular lines are drawn
+                const imageData = rectifiedCtx.getImageData(0, 0, rectifiedCanvas.width, rectifiedCanvas.height);
+                
+                // Calculate the main line vector and perpendicular direction
+                const dx = rectifiedPoints[1].x - rectifiedPoints[0].x;
+                const dy = rectifiedPoints[1].y - rectifiedPoints[0].y;
+                const mainLineLength = Math.sqrt(dx * dx + dy * dy);
+                
+                // Prevent division by zero
+                if (mainLineLength === 0) {
+                    console.log("Main line has zero length, skipping analysis");
+                    return;
+                }
+                
+                // Calculate perpendicular vector (rotated 90 degrees)
+                const perpX = -dy / mainLineLength;
+                const perpY = dx / mainLineLength;
+                
+                // Array to store results for each perpendicular line
+                const results = [];
+                
+                // Analyze each perpendicular line
+                const numLines = 20;
+                for (let i = 1; i < numLines; i++) {
+                    // Calculate position along the main line
+                    const t = i / numLines;
+                    const centerX = rectifiedPoints[0].x + t * dx;
+                    const centerY = rectifiedPoints[0].y + t * dy;
+                    
+                    // Sample along the perpendicular line (500 pixels long as per your setting)
+                    const lineLength = 500;
+                    const stepSize = 1; // Sample every pixel
+                    const steps = Math.floor(lineLength / stepSize);
+                    
+                    let outermostWhiteAbove = null; // Distance above main line (positive)
+                    let outermostWhiteBelow = null; // Distance below main line (negative)
+                    
+                    // Sample from center outward in both directions
+                    // We need to find the OUTERMOST (farthest) white pixels, not just any white pixels
+                    for (let step = 0; step <= steps / 2; step++) {
+                        // Sample above the main line (positive direction)
+                        const offsetAbove = step * stepSize;
+                        const xAbove = centerX + perpX * offsetAbove;
+                        const yAbove = centerY + perpY * offsetAbove;
+                        
+                        // Sample below the main line (negative direction)
+                        const offsetBelow = step * stepSize;
+                        const xBelow = centerX - perpX * offsetBelow;
+                        const yBelow = centerY - perpY * offsetBelow;
+                        
+                        // Check if coordinates are within canvas bounds
+                        if (xAbove >= 0 && xAbove < rectifiedCanvas.width && 
+                            yAbove >= 0 && yAbove < rectifiedCanvas.height) {
+                            
+                            const pixelAbove = getPixelAt(imageData, Math.floor(xAbove), Math.floor(yAbove), rectifiedCanvas.width);
+                            if (pixelAbove.r > 200) { // Higher threshold for true white pixels (edges should be 255)
+                                // Keep the OUTERMOST (farthest from center) white pixel
+                                outermostWhiteAbove = offsetAbove;
+                                
+                                // Draw detected point for visual debugging
+                                if (visualDebugEnabled) {
+                                    rectifiedCtx.fillStyle = '#00ff00'; // Green for detected edges
+                                    rectifiedCtx.beginPath();
+                                    rectifiedCtx.arc(xAbove, yAbove, 2, 0, 2 * Math.PI);
+                                    rectifiedCtx.fill();
+                                }
+                            }
+                        }
+                        
+                        if (xBelow >= 0 && xBelow < rectifiedCanvas.width && 
+                            yBelow >= 0 && yBelow < rectifiedCanvas.height) {
+                            
+                            const pixelBelow = getPixelAt(imageData, Math.floor(xBelow), Math.floor(yBelow), rectifiedCanvas.width);
+                            if (pixelBelow.r > 200) { // Higher threshold for true white pixels (edges should be 255)
+                                // Keep the OUTERMOST (farthest from center) white pixel
+                                outermostWhiteBelow = -offsetBelow; // Negative for below
+                                
+                                // Draw detected point for visual debugging
+                                if (visualDebugEnabled) {
+                                    rectifiedCtx.fillStyle = '#ff0000'; // Red for detected edges below
+                                    rectifiedCtx.beginPath();
+                                    rectifiedCtx.arc(xBelow, yBelow, 2, 0, 2 * Math.PI);
+                                    rectifiedCtx.fill();
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Determine the farthest white pixel from the main line
+                    let farthestDistance = 0;
+                    if (outermostWhiteAbove !== null && outermostWhiteBelow !== null) {
+                        // Both sides have white pixels, choose the farther one
+                        farthestDistance = Math.abs(outermostWhiteAbove) > Math.abs(outermostWhiteBelow) ? 
+                                         outermostWhiteAbove : outermostWhiteBelow;
+                    } else if (outermostWhiteAbove !== null) {
+                        farthestDistance = outermostWhiteAbove;
+                    } else if (outermostWhiteBelow !== null) {
+                        farthestDistance = outermostWhiteBelow;
+                    }
+                    
+                    results.push({
+                        lineIndex: i,
+                        position: t,
+                        farthestDistance: farthestDistance,
+                        hasWhitePixels: outermostWhiteAbove !== null || outermostWhiteBelow !== null,
+                        debug: {
+                            outermostWhiteAbove: outermostWhiteAbove,
+                            outermostWhiteBelow: outermostWhiteBelow,
+                            centerX: centerX,
+                            centerY: centerY
+                        }
+                    });
+                }
+                
+                // Extract just the distances array
+                const distances = results.map(r => r.farthestDistance);
+                
+                // Check if this is a significant change from the last reading
+                let hasSignificantChange = false;
+                let isStable = false;
+                
+                if (perpendicularLineResults.length > 0) {
+                    const lastDistances = perpendicularLineResults[perpendicularLineResults.length - 1].distances;
+                    hasSignificantChange = detectSignificantChange(distances, lastDistances);
+                    
+                    // Simple stability logic
+                    if (hasSignificantChange) {
+                        // Over threshold = change detected, activate stability check
+                        console.log(`📊 Change detected (threshold: ${changeThreshold}px) - stability check activated`);
+                        stabilityReached = false; // Reset stability state
+                        consecutiveStableReadings = 0; // Reset counter
+                    } else {
+                        // Under threshold = no change, count up if stability check is active
+                        if (!stabilityReached) {
+                            consecutiveStableReadings++;
+                            console.log(`✅ Stable reading ${consecutiveStableReadings}/${requiredStableReadings}`);
+                            
+                            if (consecutiveStableReadings >= requiredStableReadings) {
+                                console.log(`🎯🎯🎯 STABILITY DETECTED! 🎯🎯🎯`);
+                                console.log(`📈 Readings have been stable for ${requiredStableReadings} consecutive measurements.`);
+                                console.log(`📋 Stable distances:`, distances);
+                                stabilityReached = true; // Mark stability as reached
+                            }
+                        }
+                    }
+                } else {
+                    hasSignificantChange = true; // First reading is always considered a change
+                    console.log(`🔄 First reading - stability tracking will start on next reading`);
+                }
+                
+                // Only save and log if there's a significant change
+                if (hasSignificantChange) {
+                    const timestamp = new Date().toISOString();
+                    const analysisResult = {
+                        timestamp: timestamp,
+                        distances: distances,
+                        results: results // Keep full results for debugging if needed
+                    };
+                    
+                    // Save to global array
+                    perpendicularLineResults.push(analysisResult);
+                    
+                    // Keep only the last 100 analysis results to prevent memory issues
+                    if (perpendicularLineResults.length > 100) {
+                        perpendicularLineResults = perpendicularLineResults.slice(-100);
+                    }
+                    
+                    // Log only the distances array
+                    console.log(`[${timestamp}] Distances:`, distances);
+                }
+                
+                return results;
+            }
+            
+            function getPixelAt(imageData, x, y, width) {
+                const index = (y * width + x) * 4;
+                return {
+                    r: imageData.data[index],
+                    g: imageData.data[index + 1],
+                    b: imageData.data[index + 2],
+                    a: imageData.data[index + 3]
+                };
+            }
+            
+            function detectSignificantChange(currentDistances, lastDistances) {
+                if (!lastDistances || currentDistances.length !== lastDistances.length) {
+                    return true; // Different lengths = significant change
+                }
+                
+                // Check if any distance has changed by more than the threshold
+                for (let i = 0; i < currentDistances.length; i++) {
+                    const currentDist = currentDistances[i];
+                    const lastDist = lastDistances[i];
+                    const change = Math.abs(currentDist - lastDist);
+                    
+                    if (change >= changeThreshold) {
+                        return true; // Significant change detected
+                    }
+                }
+                
+                return false; // No significant changes
+            }
+            
+            // Helper functions to access the saved results
+            function getAllPerpendicularResults() {
+                return perpendicularLineResults;
+            }
+            
+            function getLatestPerpendicularResults() {
+                return perpendicularLineResults.length > 0 ? 
+                       perpendicularLineResults[perpendicularLineResults.length - 1] : null;
+            }
+            
+            function getPerpendicularResultsByIndex(index) {
+                return perpendicularLineResults[index] || null;
+            }
+            
+            function clearPerpendicularResults() {
+                perpendicularLineResults = [];
+                console.log('Perpendicular line results cleared');
+            }
+            
+            // Threshold control functions
+            function setChangeThreshold(threshold) {
+                changeThreshold = threshold;
+                console.log(`Change threshold set to: ${threshold} pixels`);
+            }
+            
+            function getChangeThreshold() {
+                return changeThreshold;
+            }
+            
+            // Get just the distances arrays from all results
+            function getAllDistances() {
+                return perpendicularLineResults.map(result => result.distances);
+            }
+            
+            // Get just the distances from the latest result
+            function getLatestDistances() {
+                const latest = getLatestPerpendicularResults();
+                return latest ? latest.distances : null;
+            }
+            
+            // Debug function to analyze the latest results
+            function debugLatestResults() {
+                const latest = getLatestPerpendicularResults();
+                if (!latest) {
+                    console.log("No results available yet");
+                    return;
+                }
+                
+                console.log("=== DEBUG: Latest Analysis Results ===");
+                console.log("Timestamp:", latest.timestamp);
+                console.log("Distances:", latest.distances);
+                console.log("\nDetailed per-line analysis:");
+                
+                latest.results.forEach(result => {
+                    if (result.hasWhitePixels) {
+                        console.log(`Line ${result.lineIndex}: farthest=${result.farthestDistance.toFixed(1)}, above=${result.debug.outermostWhiteAbove}, below=${result.debug.outermostWhiteBelow}, center=(${result.debug.centerX.toFixed(1)}, ${result.debug.centerY.toFixed(1)})`);
+                    } else {
+                        console.log(`Line ${result.lineIndex}: no white pixels found, center=(${result.debug.centerX.toFixed(1)}, ${result.debug.centerY.toFixed(1)})`);
+                    }
+                });
+                
+                console.log("=== END DEBUG ===");
+            }
+            
+            // Function to manually trigger analysis with debug output
+            function debugAnalyzePerpendicularLines() {
+                console.log("=== MANUAL DEBUG ANALYSIS ===");
+                console.log("Rectified points:", rectifiedPoints);
+                console.log("Edge detection enabled:", edgeDetectionEnabled);
+                console.log("Selected points (4):", selectedPoints.length === 4);
+                
+                if (selectedPoints.length === 4 && edgeDetectionEnabled) {
+                    const results = analyzePerpendicularLines();
+                    debugLatestResults();
+                } else {
+                    console.log("Cannot analyze: missing requirements");
                 }
             }
+            
+            // Function to analyze edge detection quality
+            function debugEdgeDetection() {
+                if (!edgeDetectionEnabled) {
+                    console.log("Edge detection is not enabled");
+                    return;
+                }
+                
+                const imageData = rectifiedCtx.getImageData(0, 0, rectifiedCanvas.width, rectifiedCanvas.height);
+                
+                // Sample some pixels to see what values we're getting
+                console.log("=== EDGE DETECTION ANALYSIS ===");
+                console.log("Canvas size:", rectifiedCanvas.width, "x", rectifiedCanvas.height);
+                
+                // Sample a few pixels from different areas
+                const samplePoints = [
+                    { x: 50, y: 50, desc: "Top-left" },
+                    { x: rectifiedCanvas.width/2, y: rectifiedCanvas.height/2, desc: "Center" },
+                    { x: rectifiedCanvas.width-50, y: rectifiedCanvas.height-50, desc: "Bottom-right" }
+                ];
+                
+                samplePoints.forEach(point => {
+                    const pixel = getPixelAt(imageData, point.x, point.y, rectifiedCanvas.width);
+                    console.log(`${point.desc} (${point.x}, ${point.y}): R=${pixel.r}, G=${pixel.g}, B=${pixel.b}`);
+                });
+                
+                // Count white pixels in a small area
+                let whitePixels = 0;
+                let totalPixels = 0;
+                for (let x = 100; x < 200; x++) {
+                    for (let y = 100; y < 200; y++) {
+                        const pixel = getPixelAt(imageData, x, y, rectifiedCanvas.width);
+                        totalPixels++;
+                        if (pixel.r > 200) whitePixels++;
+                    }
+                }
+                console.log(`White pixel density in 100x100 area: ${whitePixels}/${totalPixels} (${(whitePixels/totalPixels*100).toFixed(1)}%)`);
+                console.log("=== END EDGE DETECTION ANALYSIS ===");
+            }
+            
+            // Visual debugging functions
+            function enableVisualDebug() {
+                visualDebugEnabled = true;
+                console.log("Visual debugging enabled - detected edge points will be drawn on canvas");
+            }
+            
+            function disableVisualDebug() {
+                visualDebugEnabled = false;
+                console.log("Visual debugging disabled");
+            }
+            
+            function clearDebugOverlay() {
+                // This will be called before each analysis to clear previous debug points
+                // The main drawing function will redraw the perpendicular lines and points
+                // We don't need to clear here since the edge detection redraws everything
+            }
+            
+            function toggleVisualDebug() {
+                visualDebugEnabled = !visualDebugEnabled;
+                console.log(`Visual debugging ${visualDebugEnabled ? 'enabled' : 'disabled'}`);
+                return visualDebugEnabled;
+            }
+            
+            // Stability detection control functions
+            function setRequiredStableReadings(count) {
+                requiredStableReadings = count;
+                console.log(`Required stable readings set to: ${count}`);
+            }
+            
+            function getRequiredStableReadings() {
+                return requiredStableReadings;
+            }
+            
+            function getConsecutiveStableReadings() {
+                return consecutiveStableReadings;
+            }
+            
+            function resetStabilityCounter() {
+                consecutiveStableReadings = 0;
+                console.log("Stability counter reset");
+            }
+            
+            function getStabilityStatus() {
+                const status = {
+                    consecutiveStableReadings: consecutiveStableReadings,
+                    requiredStableReadings: requiredStableReadings,
+                    threshold: changeThreshold,
+                    totalReadings: perpendicularLineResults.length,
+                    progress: `${consecutiveStableReadings}/${requiredStableReadings}`,
+                    stabilityReached: stabilityReached
+                };
+                console.log("📊 Current Stability Status:", status);
+                return status;
+            }
+            
+            function resetStabilityState() {
+                stabilityReached = false;
+                consecutiveStableReadings = 0;
+                console.log("🔄 Stability state reset - tracking will resume on all readings");
+            }
+            
+            function isStabilityReached() {
+                return stabilityReached;
+            }
+            
+            // Make functions globally accessible for debugging
+            window.getPerpendicularResults = getAllPerpendicularResults;
+            window.getLatestResults = getLatestPerpendicularResults;
+            window.getResultsByIndex = getPerpendicularResultsByIndex;
+            window.clearResults = clearPerpendicularResults;
+            window.setThreshold = setChangeThreshold;
+            window.getThreshold = getChangeThreshold;
+            window.getAllDistances = getAllDistances;
+            window.getLatestDistances = getLatestDistances;
+            window.debugLatest = debugLatestResults;
+            window.debugAnalyze = debugAnalyzePerpendicularLines;
+            window.debugEdges = debugEdgeDetection;
+            window.enableVisualDebug = enableVisualDebug;
+            window.disableVisualDebug = disableVisualDebug;
+            window.toggleVisualDebug = toggleVisualDebug;
+            window.setRequiredStableReadings = setRequiredStableReadings;
+            window.getRequiredStableReadings = getRequiredStableReadings;
+            window.getConsecutiveStableReadings = getConsecutiveStableReadings;
+            window.resetStabilityCounter = resetStabilityCounter;
+            window.getStabilityStatus = getStabilityStatus;
+            window.resetStabilityState = resetStabilityState;
+            window.isStabilityReached = isStabilityReached;
             
             function performRectification() {
                 if (selectedPoints.length !== 4) {
@@ -703,6 +1340,9 @@
                 
                 // Perform one-time rectification
                 updateLiveRectification();
+                
+                // Draw the draggable points and line
+                drawRectifiedPointsAndLine();
                 
                 console.log('Rectification completed');
             }
