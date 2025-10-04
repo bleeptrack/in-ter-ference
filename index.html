@@ -7,139 +7,102 @@
     <style>
         html,
         body {
-            height: 100%;
+            padding: 0;
             margin: 0;
-            padding: 20px;
-            font-family: Arial, sans-serif;
-            background-color: #f0f0f0;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 30px;
-        }
-        
-        .demo-section {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        .demo-section h2 {
-            margin-top: 0;
-            color: #555;
-        }
-        
-        #paper-canvas {
-            border: 2px solid #ddd;
-            border-radius: 4px;
-            display: block;
-            margin: 10px auto;
-            transition: all 0.3s ease;
-        }
-        
-        /* Scale canvas with resize attribute to full size */
-        canvas[resize] {
             width: 100%;
             height: 100%;
         }
         
-        #paper-canvas.floating {
+        
+        .demo-section{
+            height: 29%;
+        }
+
+        .demo-section canvas{
+            border: 1px solid white;
+        }
+        
+        
+        /* Scale canvas with resize attribute to full size */
+        .container{
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+        }
+
+        #paper-canvas{
+            width: 100%;
+            height: 100%;
+        }
+
+        #settings-section{
+            width: 25vw;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
             position: fixed;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
-            margin: 0;
-            border: none;
-            border-radius: 0;
-            z-index: 9999;
-        }
-        
-        #webcam-video {
-            border: 2px solid #ddd;
-            border-radius: 4px;
-            display: block;
-            margin: 10px auto;
-            max-width: 100%;
+            margin: 1vh;
         }
         
         .controls {
             text-align: center;
             margin: 20px 0;
         }
-        
-        button {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin: 0 10px;
-            font-size: 16px;
+
+        #status {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 30px;
+            width: 640px;
         }
-        
-        button:hover {
-            background-color: #0056b3;
+
+        #status-emoji{
+            font-size: 10em;
+            display: block;
+            text-align: center;
         }
-        
-        button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
+
+        #status-text{
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            margin: 0;
         }
+
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Paper.js + feat.js Demo</h1>
         
-        <div class="demo-section">
-            <h2>Paper.js Canvas</h2>
-            <canvas id="paper-canvas" resize width="800" height="400"></canvas>
-            <div class="controls">
-                <button id="clear-canvas">Clear Canvas</button>
-                <button id="draw-shapes">Draw Shapes</button>
-                <button id="change-mode">Change Blend Mode</button>
-                <button id="change-speed">Change Speed</button>
-                <button id="regenerate-pattern">New Pattern</button>
-                <button id="change-colors">Change Colors</button>
-                <button id="toggle-float">Toggle Float</button>
-            </div>
-        </div>
         
-        <div class="demo-section">
-            <h2>Webcam Feed (feat.js)</h2>
-            <div style="position: relative; display: inline-block;">
-                <video id="webcam-video" width="640" height="480" autoplay muted></video>
-                <canvas id="overlay-canvas" width="640" height="480" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+        <div id="settings-section"> 
+            <div class="demo-section" id="demo-webcam">
+                
+                <div style="position: relative; display: inline-block;">
+                    <video id="webcam-video" width="640" height="480" autoplay muted></video>
+                    <canvas id="overlay-canvas" width="640" height="480" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+                </div>
             </div>
-            <div class="controls">
-                <button id="start-webcam">Start Webcam</button>
-                <button id="stop-webcam" disabled>Stop Webcam</button>
-                <button id="select-points" disabled>Select 4 Points</button>
-                <button id="clear-points" disabled>Clear Points</button>
-                <button id="save-points" disabled>Save Points</button>
-                <button id="rectify" disabled>Rectify Trapezoid</button>
-                <button id="toggle-edges" disabled>Toggle Edge Detection</button>
+            
+            <div class="demo-section" id="demo-rectified">
+                <canvas id="rectified-canvas" width="640" height="480" ></canvas>
             </div>
-            <div id="point-status" style="margin-top: 10px; text-align: center; color: #666;">
-                Click on the video to select 4 points for trapezoid rectification
+
+            <div class="demo-section" id="status">
+                <span id="status-emoji"></span>
+                <h1 id="status-text"></h1>
             </div>
-        </div>
-        
-        <div class="demo-section" id="rectified-section" style="display: none;">
-            <h2>Rectified Output</h2>
-            <canvas id="rectified-canvas" width="640" height="480" style="border: 2px solid #ddd; border-radius: 4px; display: block; margin: 10px auto;"></canvas>
-        </div>
+
+        </div>  
+
+        <canvas id="paper-canvas" hidpi="off"></canvas>
     </div>
 
     <!-- Include Paper.js -->
@@ -179,7 +142,7 @@
             let perpendicularLineResults = [];
             
             // Threshold for detecting significant changes between readings
-            let changeThreshold = 100.0; // pixels
+            let changeThreshold = 250.0; // pixels
             
             // Visual debugging
             let visualDebugEnabled = false;
@@ -197,120 +160,14 @@
                 
                 // Initialize Sketch.js code
                 initializeSketch();
+
                 
                 // Call the sketch initialization after Paper.js is ready
                 if (window.sketchVars && window.sketchVars.init) {
                     window.sketchVars.init();
                 }
                 
-                // Create a simple drawing tool
-                const tool = new Tool();
                 
-                // Draw a circle when clicking
-                tool.onMouseDown = function(event) {
-                    const circle = new Path.Circle({
-                        center: event.point,
-                        radius: 20,
-                        fillColor: 'orange'
-                    });
-                };
-                
-                // Canvas controls
-                document.getElementById('clear-canvas').onclick = function() {
-                    project.clear();
-                };
-                
-                document.getElementById('draw-shapes').onclick = function() {
-                    // Draw some random shapes
-                    for (let i = 0; i < 5; i++) {
-                        const rect = new Path.Rectangle({
-                            point: [Math.random() * 700, Math.random() * 300],
-                            size: [50, 50],
-                            fillColor: ['red', 'blue', 'green', 'yellow', 'purple'][i]
-                        });
-                    }
-                };
-                
-                // Floating canvas functionality
-                let isFloating = false;
-                
-                function toggleFloat() {
-                    const canvas = document.getElementById('paper-canvas');
-                    
-                    if (!isFloating) {
-                        canvas.classList.add('floating');
-                        isFloating = true;
-                        console.log('Canvas is now floating');
-                    } else {
-                        canvas.classList.remove('floating');
-                        isFloating = false;
-                        console.log('Canvas returned to normal position');
-                    }
-                    
-                    // Trigger window resize event
-                    setTimeout(() => {
-                        if (window.fireEvent) {
-                            // IE
-                            window.fireEvent('onresize');
-                        } else {
-                            // Modern browsers
-                            const resizeEvent = document.createEvent('Event');
-                            resizeEvent.initEvent('resize', true, true);
-                            window.dispatchEvent(resizeEvent);
-                        }
-                    }, 100);
-                }
-                
-                // Button click handler
-                document.getElementById('toggle-float').onclick = toggleFloat;
-                
-                // Canvas click handler
-                document.getElementById('paper-canvas').onclick = function() {
-                    if (isFloating) {
-                        toggleFloat();
-                    }
-                };
-                
-                // Sketch.js variable controls
-                document.getElementById('change-mode').onclick = function() {
-                    const modes = ['difference', 'multiply', 'screen', 'overlay', 'soft-light'];
-                    const currentIndex = modes.indexOf(window.sketchVars.mode);
-                    const nextIndex = (currentIndex + 1) % modes.length;
-                    window.sketchVars.mode = modes[nextIndex];
-                    window.sketchVars.redraw();
-                    console.log('Blend mode changed to:', window.sketchVars.mode);
-                };
-                
-                document.getElementById('change-speed').onclick = function() {
-                    const speeds = [0.01, 0.05, 0.1, 0.2, 0.5];
-                    const currentIndex = speeds.indexOf(window.sketchVars.rotationSpeed);
-                    const nextIndex = (currentIndex + 1) % speeds.length;
-                    window.sketchVars.rotationSpeed = speeds[nextIndex];
-                    console.log('Rotation speed changed to:', window.sketchVars.rotationSpeed);
-                };
-                
-                document.getElementById('regenerate-pattern').onclick = function() {
-                    window.sketchVars.pattern = getRandomTest(10);
-                    window.sketchVars.redraw();
-                    console.log('New pattern generated:', window.sketchVars.pattern);
-                };
-                
-                document.getElementById('change-colors').onclick = function() {
-                    const colorSets = [
-                        ['white', 'red'],
-                        ['blue', 'yellow'],
-                        ['green', 'magenta'],
-                        ['cyan', 'orange'],
-                        ['purple', 'lime']
-                    ];
-                    const currentIndex = colorSets.findIndex(set => 
-                        set[0] === window.sketchVars.colors[0] && set[1] === window.sketchVars.colors[1]
-                    );
-                    const nextIndex = (currentIndex + 1) % colorSets.length;
-                    window.sketchVars.colors = colorSets[nextIndex];
-                    window.sketchVars.redraw();
-                    console.log('Colors changed to:', window.sketchVars.colors);
-                };
                 
                 // Initialize overlay and rectified canvases
                 overlayCanvas = document.getElementById('overlay-canvas');
@@ -336,9 +193,6 @@
                         const video = document.getElementById('webcam-video');
                         video.srcObject = stream;
                         
-                        document.getElementById('start-webcam').disabled = true;
-                        document.getElementById('stop-webcam').disabled = false;
-                        document.getElementById('select-points').disabled = false;
                         
                         // Initialize feat.js when video starts playing
                         video.onloadedmetadata = function() {
@@ -356,88 +210,11 @@
                     });
             }
             
-            document.getElementById('start-webcam').onclick = startWebcam;
             
-            document.getElementById('stop-webcam').onclick = function() {
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                    stream = null;
-                    
-                    const video = document.getElementById('webcam-video');
-                    video.srcObject = null;
-                    
-                    document.getElementById('start-webcam').disabled = false;
-                    document.getElementById('stop-webcam').disabled = true;
-                    document.getElementById('select-points').disabled = true;
-                    document.getElementById('clear-points').disabled = true;
-                    document.getElementById('rectify').disabled = true;
-                    document.getElementById('toggle-edges').disabled = true;
-                    
-                    // Clear points and overlay
-                    selectedPoints = [];
-                    isSelectingPoints = false;
-                    clearOverlay();
-                    updatePointStatus();
-                    
-                    // Stop live rectification
-                    stopLiveRectification();
-                    
-                    // Hide rectified section
-                    document.getElementById('rectified-section').style.display = 'none';
-                }
-            };
             
-            // Point selection functionality
-            document.getElementById('select-points').onclick = function() {
-                isSelectingPoints = true;
-                selectedPoints = [];
-                clearOverlay();
-                updatePointStatus();
-                
-                document.getElementById('select-points').disabled = true;
-                document.getElementById('clear-points').disabled = false;
-            };
             
-            document.getElementById('clear-points').onclick = function() {
-                selectedPoints = [];
-                isSelectingPoints = false;
-                clearOverlay();
-                updatePointStatus();
-                
-                // Stop live rectification
-                stopLiveRectification();
-                
-                // Hide rectified section
-                document.getElementById('rectified-section').style.display = 'none';
-                
-                document.getElementById('select-points').disabled = false;
-                document.getElementById('clear-points').disabled = true;
-                document.getElementById('save-points').disabled = true;
-                document.getElementById('rectify').disabled = true;
-                document.getElementById('toggle-edges').disabled = true;
-            };
             
-            document.getElementById('save-points').onclick = function() {
-                savePoints();
-            };
             
-            // Rectify button
-            document.getElementById('rectify').onclick = function() {
-                if (selectedPoints.length === 4) {
-                    performRectification();
-                }
-            };
-            
-            // Toggle edge detection button
-            document.getElementById('toggle-edges').onclick = function() {
-                edgeDetectionEnabled = !edgeDetectionEnabled;
-                this.textContent = edgeDetectionEnabled ? 'Disable Edge Detection' : 'Toggle Edge Detection';
-                
-                // If edge detection is enabled, apply it immediately
-                if (edgeDetectionEnabled && selectedPoints.length === 4) {
-                    updateEdgeDetection();
-                }
-            };
             
             // Video mouse event handlers for point selection and dragging
             const video = document.getElementById('webcam-video');
@@ -470,14 +247,9 @@
                 
                 if (selectedPoints.length === 4) {
                     isSelectingPoints = false;
-                        document.getElementById('select-points').disabled = false;
-                        document.getElementById('save-points').disabled = false;
-                        document.getElementById('rectify').disabled = false;
-                        document.getElementById('toggle-edges').disabled = false;
                         
                         // Automatically enable edge detection
                         edgeDetectionEnabled = true;
-                        document.getElementById('toggle-edges').textContent = 'Disable Edge Detection';
                     drawTrapezoid();
                     
                     // Auto-save points when 4 are selected
@@ -599,14 +371,7 @@
             }
             
             function updatePointStatus() {
-                const status = document.getElementById('point-status');
-                if (isSelectingPoints) {
-                    status.textContent = `Select point ${selectedPoints.length + 1} of 4 (${selectedPoints.length}/4 selected)`;
-                } else if (selectedPoints.length === 4) {
-                    status.textContent = '4 points selected. Drag points to adjust, or click "Rectify Trapezoid" to process.';
-                } else {
-                    status.textContent = 'Click "Select 4 Points" to start point selection.';
-                }
+                
             }
             
             function savePoints() {
@@ -637,16 +402,11 @@
                             drawTrapezoid();
                             updatePointStatus();
                             
-                            // Enable rectify button
-                            document.getElementById('rectify').disabled = false;
-                            document.getElementById('toggle-edges').disabled = false;
+                           
                             
                             // Automatically enable edge detection
                             edgeDetectionEnabled = true;
-                            document.getElementById('toggle-edges').textContent = 'Disable Edge Detection';
                             
-                            // Show rectified section and start live preview
-                            document.getElementById('rectified-section').style.display = 'block';
                             
                             // Start live rectification only if webcam is ready
                             const video = document.getElementById('webcam-video');
@@ -1052,12 +812,17 @@
                         console.log(`📊 Change detected: total=${changeResult.totalChange.toFixed(1)}px, max=${changeResult.maxChange.toFixed(1)}px (threshold: ${changeThreshold}px) - stability check activated`);
                         stabilityReached = false; // Reset stability state
                         consecutiveStableReadings = 0; // Reset counter
+                        document.getElementById('status-emoji').textContent = '🔄';
+                        document.getElementById('status-text').textContent = 'VERÄNDERUNG DETEKTEDIERT';
                     } else {
                         // Under threshold = no change, count up if stability check is active
                         if (!stabilityReached) {
                             consecutiveStableReadings++;
                             console.log(`✅ Stable reading ${consecutiveStableReadings}/${requiredStableReadings} (total change: ${changeResult.totalChange.toFixed(1)}px)`);
                             
+                            document.getElementById('status-emoji').textContent = '⚖️';
+                            document.getElementById('status-text').textContent = 'STABILISIERE BILD';
+
                             if (consecutiveStableReadings >= requiredStableReadings) {
                                 console.log(`🎯🎯🎯 STABILITY DETECTED! 🎯🎯🎯`);
                                 console.log(`📈 Readings have been stable for ${requiredStableReadings} consecutive measurements.`);
@@ -1071,6 +836,9 @@
                                 bottomDistances = distances.map(d => d < 0 ? ((-d) / maxBottom >= 0.5 ? 1 : 0) : 0);
 
                                 window.setPatterns(topDistances, bottomDistances);
+
+                                document.getElementById('status-emoji').textContent = '✅';
+                                document.getElementById('status-text').textContent = 'LINIE ERKANNT';
                             }
                         }
                     }

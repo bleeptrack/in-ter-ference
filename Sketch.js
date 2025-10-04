@@ -28,6 +28,7 @@ function makePattern(pattern, height, rot, col){
         r.blendMode = window.sketchVars.mode;
         patternGroup.addChild(r)
     }
+    
     for(let [idx, i] of Object.entries(pattern)){
         let r = new paper.Path.Rectangle([0,idx*height+groupHeight/2], [paper.view.bounds.width*2, height])
         r.fillColor = col
@@ -35,15 +36,18 @@ function makePattern(pattern, height, rot, col){
         r.blendMode = window.sketchVars.mode
         patternGroup.addChild(r)
     }
+    
     patternGroup.rotate(directionLine.getNormalAt(10).angle)
+    patternGroup.remove()
     
     let patternSymbol = new paper.Symbol(patternGroup)
     for(let i = 0; i<directionLine.length;i+=groupHeight){
         console.log(i)
         patternSymbol.place(directionLine.getPointAt(i))
         
-        console.log(directionLine.getTangentAt(i).angle)
+        console.log("placed at angle:", directionLine.getTangentAt(i).angle)
     }
+    directionLine.remove()
 }
 
 function getRandomTest(nr){
@@ -57,7 +61,22 @@ function getRandomTest(nr){
 window.setPatterns = function(pattern1, pattern2){
     window.sketchVars.pattern = pattern1
     window.sketchVars.pattern2 = pattern2
+    //fadeOut()
+    paper.project.activeLayer.removeChildren()
+    //setTimeout(() => {
+    //    window.sketchVars.redraw()
+    //}, 3000)
+
     window.sketchVars.redraw()
+}
+
+function fadeOut(){
+    for( let elem of paper.project.activeLayer.children){
+        elem.tweenTo({opacity: 0}, Math.random()*2000+1000).onComplete = function(){
+            elem.remove()
+        }
+    }
+    
 }
 
 // Store pattern globally
@@ -83,26 +102,20 @@ window.sketchVars.redraw = function() {
     makePattern(p2, window.sketchVars.heights[1], 0, window.sketchVars.colors[1])
     makePattern(p2, window.sketchVars.heights[1], 120, window.sketchVars.colors[1])
     makePattern(p2, window.sketchVars.heights[1], 240, window.sketchVars.colors[1])
+
+    for(let elem of paper.project.activeLayer.children){
+        console.log(elem.className)
+    }
     
     console.log('Patterns created, total items in project:', paper.project.activeLayer.children.length);
     
-    // If no items were created, draw a simple test shape
-    if (paper.project.activeLayer.children.length === 0) {
-        console.log('No patterns created, drawing test circle...');
-        let testCircle = new paper.Path.Circle({
-            center: paper.view.center,
-            radius: 50,
-            fillColor: 'red'
-        });
-        console.log('Test circle created');
-    }
 }
 
 // Function to set up the animation frame
 window.sketchVars.setupAnimation = function() {
     paper.view.onFrame = function(e) {
         // Use frame delta for smooth rotation independent of frame rate
-        paper.view.rotate(window.sketchVars.rotationSpeed * 10 * e.delta)
+        paper.view.rotate(window.sketchVars.rotationSpeed /2 )
     }
 }
 
@@ -114,6 +127,7 @@ window.sketchVars.onResize = function(event) {
 
 // Initial setup - this will be called after Paper.js is ready
 window.sketchVars.init = function() {
+   
     window.sketchVars.redraw()
     window.sketchVars.setupAnimation()
     
