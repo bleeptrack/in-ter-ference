@@ -131,8 +131,8 @@
             
             // Variables for draggable points on rectified canvas
             let rectifiedPoints = [
-                { x: 100, y: 100 }, // First point
-                { x: 300, y: 200 }  // Second point
+                { x: 128, y: 240 }, // First point (20% from left, middle height)
+                { x: 512, y: 240 }  // Second point (80% from left, middle height)
             ];
             let isDraggingRectifiedPoint = false;
             let draggedRectifiedPointIndex = -1;
@@ -201,6 +201,9 @@
                             // If we have saved points, start live rectification now that video is ready
                             if (selectedPoints.length === 4) {
                                 startLiveRectification();
+                            } else if (selectedPoints.length === 0) {
+                                // No points set yet, set default triangulation points now that video dimensions are known
+                                setDefaultTriangulationPoints();
                             }
                         };
                     })
@@ -386,6 +389,52 @@
                 console.log('Rectified points saved to localStorage');
             }
             
+            function setDefaultTriangulationPoints() {
+                // Set default triangulation points that form a reasonable trapezoid
+                // These points are positioned to cover a typical screen area
+                const video = document.getElementById('webcam-video');
+                const videoWidth = video ? video.videoWidth : 640;
+                const videoHeight = video ? video.videoHeight : 480;
+                
+                // Create a trapezoid that covers most of the video area
+                // Top-left, top-right, bottom-right, bottom-left
+                selectedPoints = [
+                    { x: videoWidth * 0.1, y: videoHeight * 0.1 },      // top-left
+                    { x: videoWidth * 0.9, y: videoHeight * 0.1 },      // top-right
+                    { x: videoWidth * 0.8, y: videoHeight * 0.9 },      // bottom-right
+                    { x: videoWidth * 0.2, y: videoHeight * 0.9 }       // bottom-left
+                ];
+                
+                console.log('Set default triangulation points:', selectedPoints);
+                
+                // Draw the default points and trapezoid
+                clearOverlay();
+                for (let i = 0; i < selectedPoints.length; i++) {
+                    drawPoint(selectedPoints[i].x, selectedPoints[i].y, i + 1);
+                }
+                drawTrapezoid();
+                
+                // Automatically enable edge detection
+                edgeDetectionEnabled = true;
+                
+                // Save the default points
+                savePoints();
+                
+                // Start live rectification if webcam is ready
+                if (video && video.videoWidth > 0 && video.videoHeight > 0) {
+                    startLiveRectification();
+                    
+                    // Draw the draggable points and line
+                    setTimeout(() => {
+                        drawRectifiedPointsAndLine();
+                    }, 100);
+                    
+                    // Initialize stability detection for default points
+                    console.log(`🔄 Stability detection initialized with default points`);
+                    console.log(`📊 Current threshold: ${changeThreshold}px, Required stable readings: ${requiredStableReadings}`);
+                }
+            }
+            
             function loadSavedPoints() {
                 const saved = localStorage.getItem('savedPoints');
                 if (saved) {
@@ -426,6 +475,9 @@
                     } catch (e) {
                         console.error('Error loading saved points:', e);
                     }
+                } else {
+                    // No saved points found, set default triangulation points
+                    setDefaultTriangulationPoints();
                 }
                 
                 // Load saved rectified points
@@ -441,12 +493,49 @@
                     } catch (e) {
                         console.error('Error loading saved rectified points:', e);
                         // Reset to default positions if loading fails
-                        rectifiedPoints = [
-                            { x: 100, y: 100 },
-                            { x: 300, y: 200 }
-                        ];
+                        setDefaultGreenLinePoints();
                     }
+                } else {
+                    // No saved rectified points found, set default green line points
+                    setDefaultGreenLinePoints();
                 }
+            }
+            
+            function setDefaultGreenLinePoints() {
+                // Set default green line points that are well-positioned for edge detection
+                const rectifiedCanvas = document.getElementById('rectified-canvas');
+                const canvasWidth = rectifiedCanvas ? rectifiedCanvas.width : 640;
+                const canvasHeight = rectifiedCanvas ? rectifiedCanvas.height : 480;
+                
+                // Create a horizontal line across the middle of the canvas
+                rectifiedPoints = [
+                    { x: canvasWidth * 0.2, y: canvasHeight * 0.5 },   // Left point
+                    { x: canvasWidth * 0.8, y: canvasHeight * 0.5 }    // Right point
+                ];
+                
+                console.log('Set default green line points:', rectifiedPoints);
+                
+                // Save the default points
+                saveRectifiedPoints();
+            }
+            
+            function resetToDefaultPoints() {
+                // Clear all saved points and reset to defaults
+                localStorage.removeItem('savedPoints');
+                localStorage.removeItem('savedRectifiedPoints');
+                
+                // Clear current points
+                selectedPoints = [];
+                rectifiedPoints = [];
+                
+                // Clear overlay
+                clearOverlay();
+                
+                // Reset to default points
+                setDefaultTriangulationPoints();
+                setDefaultGreenLinePoints();
+                
+                console.log('Reset to default points');
             }
             
             let liveRectificationInterval = null;
@@ -1108,6 +1197,9 @@
             window.getStabilityStatus = getStabilityStatus;
             window.resetStabilityState = resetStabilityState;
             window.isStabilityReached = isStabilityReached;
+            window.resetToDefaultPoints = resetToDefaultPoints;
+            window.setDefaultTriangulationPoints = setDefaultTriangulationPoints;
+            window.setDefaultGreenLinePoints = setDefaultGreenLinePoints;
             
             function performRectification() {
                 if (selectedPoints.length !== 4) {
