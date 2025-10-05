@@ -152,6 +152,13 @@
             let requiredStableReadings = 3;
             let stabilityReached = false; // Track if stability has been achieved
             
+            // Performance settings for Jetson Nano optimization (defaulted to low performance mode)
+            let edgeDetectionIntervalMs = 1000; // Default 1000ms interval for Jetson Nano
+            let useReducedResolution = true; // Default to reduced resolution for Jetson Nano
+            let reducedResolutionFactor = 0.5; // Reduce to 50% resolution
+            let optimizedCannyThresholds = { low: 30, high: 100 }; // Lower thresholds for faster processing
+            let reducedPerpendicularLines = 10; // Reduce from 20 to 10 lines for analysis
+            
             // Initialize Paper.js when the page loads
             window.onload = function() {
                 // Set up Paper.js canvas
@@ -551,6 +558,79 @@
                 setDefaultGreenLinePoints();
             }
             
+            // Performance control functions for Jetson Nano optimization
+            function setPerformanceMode(mode) {
+                switch(mode) {
+                    case 'high':
+                        edgeDetectionIntervalMs = 200;
+                        useReducedResolution = false;
+                        reducedPerpendicularLines = 20;
+                        optimizedCannyThresholds = { low: 50, high: 150 };
+                        console.log('Set to HIGH performance mode (fastest processing)');
+                        break;
+                    case 'medium':
+                        edgeDetectionIntervalMs = 500;
+                        useReducedResolution = false;
+                        reducedPerpendicularLines = 15;
+                        optimizedCannyThresholds = { low: 40, high: 120 };
+                        console.log('Set to MEDIUM performance mode (balanced)');
+                        break;
+                    case 'low':
+                        edgeDetectionIntervalMs = 1000;
+                        useReducedResolution = true;
+                        reducedResolutionFactor = 0.5;
+                        reducedPerpendicularLines = 10;
+                        optimizedCannyThresholds = { low: 30, high: 100 };
+                        console.log('Set to LOW performance mode (most efficient for Jetson Nano)');
+                        break;
+                    default:
+                        console.log('Available modes: high, medium, low');
+                }
+                
+                // Restart the interval with new timing
+                if (liveRectificationInterval) {
+                    clearInterval(liveRectificationInterval);
+                    liveRectificationInterval = setInterval(() => {
+                        if (selectedPoints.length === 4) {
+                            updateLiveRectification();
+                            updateEdgeDetection();
+                        }
+                    }, edgeDetectionIntervalMs);
+                }
+            }
+            
+            function getPerformanceSettings() {
+                return {
+                    interval: edgeDetectionIntervalMs,
+                    reducedResolution: useReducedResolution,
+                    resolutionFactor: reducedResolutionFactor,
+                    perpendicularLines: reducedPerpendicularLines,
+                    cannyThresholds: optimizedCannyThresholds
+                };
+            }
+            
+            function setEdgeDetectionInterval(ms) {
+                edgeDetectionIntervalMs = ms;
+                console.log(`Edge detection interval set to ${ms}ms`);
+                
+                // Restart the interval with new timing
+                if (liveRectificationInterval) {
+                    clearInterval(liveRectificationInterval);
+                    liveRectificationInterval = setInterval(() => {
+                        if (selectedPoints.length === 4) {
+                            updateLiveRectification();
+                            updateEdgeDetection();
+                        }
+                    }, edgeDetectionIntervalMs);
+                }
+            }
+            
+            function toggleReducedResolution() {
+                useReducedResolution = !useReducedResolution;
+                console.log(`Reduced resolution ${useReducedResolution ? 'enabled' : 'disabled'}`);
+                return useReducedResolution;
+            }
+            
             let liveRectificationInterval = null;
             let edgeDetectionInterval = null;
             
@@ -565,7 +645,7 @@
                         updateLiveRectification();
                         updateEdgeDetection();
                     }
-                }, 1000); // Update every 100ms for smooth live preview
+                }, edgeDetectionIntervalMs); // Configurable update interval for performance
                 
                 // Start edge detection updates (less frequent)
                 if (edgeDetectionInterval) {
@@ -732,7 +812,7 @@
                 const perpY = dx / mainLineLength;
                 
                 // Draw perpendicular lines (only for visual reference, not used in analysis)
-                const numLines = 20;
+                const numLines = reducedPerpendicularLines;
                 rectifiedCtx.strokeStyle = '#ff00ff'; // Magenta color for perpendicular lines
                 rectifiedCtx.lineWidth = 1;
                 
@@ -803,17 +883,17 @@
                 // Array to store results for each perpendicular line
                 const results = [];
                 
-                // Analyze each perpendicular line
-                const numLines = 20;
+                // Analyze each perpendicular line (reduced for performance)
+                const numLines = reducedPerpendicularLines;
                 for (let i = 1; i < numLines; i++) {
                     // Calculate position along the main line
                     const t = i / numLines;
                     const centerX = rectifiedPoints[0].x + t * dx;
                     const centerY = rectifiedPoints[0].y + t * dy;
                     
-                    // Sample along the perpendicular line (500 pixels long as per your setting)
-                    const lineLength = 500;
-                    const stepSize = 1; // Sample every pixel
+                    // Sample along the perpendicular line (reduced for performance)
+                    const lineLength = 300; // Reduced from 500 to 300 pixels
+                    const stepSize = 2; // Sample every 2 pixels instead of every pixel
                     const steps = Math.floor(lineLength / stepSize);
                     
                     let outermostWhiteAbove = null; // Distance above main line (positive)
@@ -1214,6 +1294,10 @@
             window.setDefaultTriangulationPoints = setDefaultTriangulationPoints;
             window.setDefaultGreenLinePoints = setDefaultGreenLinePoints;
             window.forceDefaultPoints = forceDefaultPoints;
+            window.setPerformanceMode = setPerformanceMode;
+            window.getPerformanceSettings = getPerformanceSettings;
+            window.setEdgeDetectionInterval = setEdgeDetectionInterval;
+            window.toggleReducedResolution = toggleReducedResolution;
             
             function performRectification() {
                 if (selectedPoints.length !== 4) {
@@ -1468,42 +1552,78 @@
             
             function applyCannyEdgeDetection(canvas) {
                 const ctx = canvas.getContext('2d');
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                let workingWidth = canvas.width;
+                let workingHeight = canvas.height;
+                
+                // Optionally reduce resolution for faster processing
+                if (useReducedResolution) {
+                    const tempCanvas = document.createElement('canvas');
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCanvas.width = Math.floor(canvas.width * reducedResolutionFactor);
+                    tempCanvas.height = Math.floor(canvas.height * reducedResolutionFactor);
+                    workingWidth = tempCanvas.width;
+                    workingHeight = tempCanvas.height;
+                    
+                    // Draw scaled down version
+                    tempCtx.drawImage(canvas, 0, 0, workingWidth, workingHeight);
+                    imageData = tempCtx.getImageData(0, 0, workingWidth, workingHeight);
+                }
                 
                 // Create jsfeat matrices for processing
-                const src = new jsfeat.matrix_t(canvas.width, canvas.height, jsfeat.U8_t | jsfeat.C1_t);
-                const dst = new jsfeat.matrix_t(canvas.width, canvas.height, jsfeat.U8_t | jsfeat.C1_t);
+                const src = new jsfeat.matrix_t(workingWidth, workingHeight, jsfeat.U8_t | jsfeat.C1_t);
+                const dst = new jsfeat.matrix_t(workingWidth, workingHeight, jsfeat.U8_t | jsfeat.C1_t);
                 
-                // Convert RGBA to grayscale
-                for (let i = 0; i < imageData.data.length; i += 4) {
-                    const r = imageData.data[i];
-                    const g = imageData.data[i + 1];
-                    const b = imageData.data[i + 2];
-                    // Convert to grayscale using luminance formula
-                    const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-                    src.data[i / 4] = gray;
+                // Convert RGBA to grayscale (optimized loop)
+                const data = imageData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    // Faster grayscale conversion using bit shifting
+                    const gray = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+                    src.data[i >> 2] = gray;
                 }
                 
-                // Apply Gaussian blur first (recommended before Canny)
-                const blurred = new jsfeat.matrix_t(canvas.width, canvas.height, jsfeat.U8_t | jsfeat.C1_t);
-                jsfeat.imgproc.gaussian_blur(src, blurred, 1.0);
+                // Apply Gaussian blur with reduced kernel size for performance
+                const blurred = new jsfeat.matrix_t(workingWidth, workingHeight, jsfeat.U8_t | jsfeat.C1_t);
+                jsfeat.imgproc.gaussian_blur(src, blurred, 0.8); // Reduced blur radius
                 
-                // Apply Canny edge detection
-                jsfeat.imgproc.canny(blurred, dst, 50, 150); // low threshold: 50, high threshold: 150
+                // Apply Canny edge detection with optimized thresholds
+                jsfeat.imgproc.canny(blurred, dst, optimizedCannyThresholds.low, optimizedCannyThresholds.high);
                 
                 // Convert back to RGBA and apply to canvas
-                const resultImageData = ctx.createImageData(canvas.width, canvas.height);
-                for (let i = 0; i < dst.data.length; i++) {
-                    const edgeValue = dst.data[i];
-                    const pixelIndex = i * 4;
-                    resultImageData.data[pixelIndex] = edgeValue;     // Red
-                    resultImageData.data[pixelIndex + 1] = edgeValue; // Green
-                    resultImageData.data[pixelIndex + 2] = edgeValue; // Blue
-                    resultImageData.data[pixelIndex + 3] = 255;       // Alpha
+                if (useReducedResolution) {
+                    // Scale back up to original canvas size
+                    const resultImageData = ctx.createImageData(canvas.width, canvas.height);
+                    const scaleX = canvas.width / workingWidth;
+                    const scaleY = canvas.height / workingHeight;
+                    
+                    for (let y = 0; y < canvas.height; y++) {
+                        for (let x = 0; x < canvas.width; x++) {
+                            const srcX = Math.floor(x / scaleX);
+                            const srcY = Math.floor(y / scaleY);
+                            const srcIndex = srcY * workingWidth + srcX;
+                            const dstIndex = (y * canvas.width + x) * 4;
+                            
+                            const edgeValue = dst.data[srcIndex];
+                            resultImageData.data[dstIndex] = edgeValue;     // Red
+                            resultImageData.data[dstIndex + 1] = edgeValue; // Green
+                            resultImageData.data[dstIndex + 2] = edgeValue; // Blue
+                            resultImageData.data[dstIndex + 3] = 255;       // Alpha
+                        }
+                    }
+                    ctx.putImageData(resultImageData, 0, 0);
+                } else {
+                    // Direct application to canvas
+                    const resultImageData = ctx.createImageData(canvas.width, canvas.height);
+                    for (let i = 0; i < dst.data.length; i++) {
+                        const edgeValue = dst.data[i];
+                        const pixelIndex = i * 4;
+                        resultImageData.data[pixelIndex] = edgeValue;     // Red
+                        resultImageData.data[pixelIndex + 1] = edgeValue; // Green
+                        resultImageData.data[pixelIndex + 2] = edgeValue; // Blue
+                        resultImageData.data[pixelIndex + 3] = 255;       // Alpha
+                    }
+                    ctx.putImageData(resultImageData, 0, 0);
                 }
-                
-                // Put the edge-detected image back to canvas
-                ctx.putImageData(resultImageData, 0, 0);
             }
             
             function transformPointForward(x, y, matrix) {
