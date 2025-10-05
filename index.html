@@ -202,8 +202,11 @@
                             if (selectedPoints.length === 4) {
                                 startLiveRectification();
                             } else if (selectedPoints.length === 0) {
-                                // No points set yet, set default triangulation points now that video dimensions are known
-                                setDefaultTriangulationPoints();
+                                // No points set yet, set default triangulation points now that video is ready
+                                // Add a small delay to ensure the video element is properly rendered
+                                setTimeout(() => {
+                                    setDefaultTriangulationPoints();
+                                }, 100);
                             }
                         };
                     })
@@ -393,19 +396,22 @@
                 // Set default triangulation points that form a reasonable trapezoid
                 // These points are positioned to cover a typical screen area
                 const video = document.getElementById('webcam-video');
-                const videoWidth = video ? video.videoWidth : 640;
-                const videoHeight = video ? video.videoHeight : 480;
                 
-                // Create a trapezoid that covers most of the video area
+                // Use the display dimensions of the video element, not the video stream dimensions
+                const displayWidth = video ? video.offsetWidth : 640;
+                const displayHeight = video ? video.offsetHeight : 480;
+                
+                // Create a trapezoid that covers most of the video display area
                 // Top-left, top-right, bottom-right, bottom-left
                 selectedPoints = [
-                    { x: videoWidth * 0.1, y: videoHeight * 0.1 },      // top-left
-                    { x: videoWidth * 0.9, y: videoHeight * 0.1 },      // top-right
-                    { x: videoWidth * 0.8, y: videoHeight * 0.9 },      // bottom-right
-                    { x: videoWidth * 0.2, y: videoHeight * 0.9 }       // bottom-left
+                    { x: displayWidth * 0.1, y: displayHeight * 0.1 },      // top-left
+                    { x: displayWidth * 0.9, y: displayHeight * 0.1 },      // top-right
+                    { x: displayWidth * 0.8, y: displayHeight * 0.9 },      // bottom-right
+                    { x: displayWidth * 0.2, y: displayHeight * 0.9 }       // bottom-left
                 ];
                 
                 console.log('Set default triangulation points:', selectedPoints);
+                console.log('Video display dimensions:', displayWidth, 'x', displayHeight);
                 
                 // Draw the default points and trapezoid
                 clearOverlay();
@@ -536,6 +542,13 @@
                 setDefaultGreenLinePoints();
                 
                 console.log('Reset to default points');
+            }
+            
+            function forceDefaultPoints() {
+                // Force set default points regardless of saved state
+                console.log('Forcing default points...');
+                setDefaultTriangulationPoints();
+                setDefaultGreenLinePoints();
             }
             
             let liveRectificationInterval = null;
@@ -1200,6 +1213,7 @@
             window.resetToDefaultPoints = resetToDefaultPoints;
             window.setDefaultTriangulationPoints = setDefaultTriangulationPoints;
             window.setDefaultGreenLinePoints = setDefaultGreenLinePoints;
+            window.forceDefaultPoints = forceDefaultPoints;
             
             function performRectification() {
                 if (selectedPoints.length !== 4) {
