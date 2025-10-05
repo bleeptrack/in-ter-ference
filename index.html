@@ -152,12 +152,17 @@
             let requiredStableReadings = 3;
             let stabilityReached = false; // Track if stability has been achieved
             
-            // Performance settings for Jetson Nano optimization (defaulted to low performance mode)
-            let edgeDetectionIntervalMs = 1000; // Default 1000ms interval for Jetson Nano
+            // Performance settings for Jetson Nano optimization (defaulted to ultra-low performance mode)
+            let edgeDetectionIntervalMs = 1500; // Default 1500ms interval for maximum performance
             let useReducedResolution = true; // Default to reduced resolution for Jetson Nano
-            let reducedResolutionFactor = 0.5; // Reduce to 50% resolution
-            let optimizedCannyThresholds = { low: 30, high: 100 }; // Lower thresholds for faster processing
-            let reducedPerpendicularLines = 10; // Reduce from 20 to 10 lines for analysis
+            let reducedResolutionFactor = 0.3; // Reduce to 30% resolution for maximum speed
+            let optimizedCannyThresholds = { low: 20, high: 80 }; // Lower thresholds for fastest processing
+            let reducedPerpendicularLines = 15; // Standard 15 lines for good analysis
+            
+            // Rectification optimization settings
+            let useReducedRectificationResolution = true; // Enable reduced resolution for rectification
+            let rectificationResolutionFactor = 0.25; // Reduce rectification to 25% resolution for maximum speed
+            let useNearestNeighborInterpolation = true; // Use fastest interpolation by default
             
             // Initialize Paper.js when the page loads
             window.onload = function() {
@@ -564,27 +569,46 @@
                     case 'high':
                         edgeDetectionIntervalMs = 200;
                         useReducedResolution = false;
+                        useReducedRectificationResolution = false;
+                        useNearestNeighborInterpolation = false;
                         reducedPerpendicularLines = 20;
                         optimizedCannyThresholds = { low: 50, high: 150 };
-                        console.log('Set to HIGH performance mode (fastest processing)');
+                        console.log('Set to HIGH performance mode (fastest processing, highest quality)');
                         break;
                     case 'medium':
                         edgeDetectionIntervalMs = 500;
                         useReducedResolution = false;
+                        useReducedRectificationResolution = true;
+                        rectificationResolutionFactor = 0.7;
+                        useNearestNeighborInterpolation = false;
                         reducedPerpendicularLines = 15;
                         optimizedCannyThresholds = { low: 40, high: 120 };
-                        console.log('Set to MEDIUM performance mode (balanced)');
+                        console.log('Set to MEDIUM performance mode (balanced quality/speed)');
                         break;
                     case 'low':
                         edgeDetectionIntervalMs = 1000;
                         useReducedResolution = true;
                         reducedResolutionFactor = 0.5;
+                        useReducedRectificationResolution = true;
+                        rectificationResolutionFactor = 0.5;
+                        useNearestNeighborInterpolation = true;
                         reducedPerpendicularLines = 10;
                         optimizedCannyThresholds = { low: 30, high: 100 };
-                        console.log('Set to LOW performance mode (most efficient for Jetson Nano)');
+                        console.log('Set to LOW performance mode (fastest, optimized for Jetson Nano)');
+                        break;
+                    case 'ultra-low':
+                        edgeDetectionIntervalMs = 1500;
+                        useReducedResolution = true;
+                        reducedResolutionFactor = 0.3;
+                        useReducedRectificationResolution = true;
+                        rectificationResolutionFactor = 0.3;
+                        useNearestNeighborInterpolation = true;
+                        reducedPerpendicularLines = 5;
+                        optimizedCannyThresholds = { low: 20, high: 80 };
+                        console.log('Set to ULTRA-LOW performance mode (maximum speed, lowest quality)');
                         break;
                     default:
-                        console.log('Available modes: high, medium, low');
+                        console.log('Available modes: high, medium, low, ultra-low');
                 }
                 
                 // Restart the interval with new timing
@@ -629,6 +653,23 @@
                 useReducedResolution = !useReducedResolution;
                 console.log(`Reduced resolution ${useReducedResolution ? 'enabled' : 'disabled'}`);
                 return useReducedResolution;
+            }
+            
+            function toggleReducedRectificationResolution() {
+                useReducedRectificationResolution = !useReducedRectificationResolution;
+                console.log(`Reduced rectification resolution ${useReducedRectificationResolution ? 'enabled' : 'disabled'}`);
+                return useReducedRectificationResolution;
+            }
+            
+            function setRectificationResolutionFactor(factor) {
+                rectificationResolutionFactor = Math.max(0.1, Math.min(1.0, factor));
+                console.log(`Rectification resolution factor set to: ${rectificationResolutionFactor}`);
+            }
+            
+            function toggleNearestNeighborInterpolation() {
+                useNearestNeighborInterpolation = !useNearestNeighborInterpolation;
+                console.log(`Nearest neighbor interpolation ${useNearestNeighborInterpolation ? 'enabled' : 'disabled'}`);
+                return useNearestNeighborInterpolation;
             }
             
             let liveRectificationInterval = null;
@@ -676,6 +717,9 @@
                     return; // Skip if video not ready
                 }
                 
+                // Performance measurement: Start rectification timing
+                const rectificationStart = performance.now();
+                
                 const sourceCanvas = document.createElement('canvas');
                 const sourceCtx = sourceCanvas.getContext('2d');
                 
@@ -718,20 +762,82 @@
                 // Apply transformation to rectified canvas
                 applyPerspectiveTransform(sourceCanvas, rectifiedCanvas, inverseMatrix);
                 
+                // Performance measurement: End rectification timing
+                const rectificationEnd = performance.now();
+                const rectificationTime = rectificationEnd - rectificationStart;
+                
+                // Initialize performance data if it doesn't exist
+                if (!window.performanceData) {
+                    window.performanceData = {
+                        rectificationTimes: [],
+                        edgeDetectionTimes: [],
+                        cannyTimes: [],
+                        analysisTimes: [],
+                        drawTimes: [],
+                        totalTimes: []
+                    };
+                }
+                window.performanceData.rectificationTimes.push(rectificationTime);
+                
                 // Note: Edge detection is now handled separately by updateEdgeDetection()
             }
             
             function updateEdgeDetection() {
                 if (selectedPoints.length !== 4 || !edgeDetectionEnabled) return;
                 
+                // Initialize performance data if it doesn't exist
+                if (!window.performanceData) {
+                    window.performanceData = {
+                        rectificationTimes: [],
+                        edgeDetectionTimes: [],
+                        cannyTimes: [],
+                        analysisTimes: [],
+                        drawTimes: [],
+                        totalTimes: []
+                    };
+                }
+                
+                // Performance measurement: Start edge detection timing
+                const edgeDetectionStart = performance.now();
+                
                 // Apply Canny edge detection to the current rectified canvas
                 applyCannyEdgeDetection(rectifiedCanvas);
                 
+                // Performance measurement: End Canny edge detection timing
+                const cannyEnd = performance.now();
+                const cannyTime = cannyEnd - edgeDetectionStart;
+                
                 // Analyze perpendicular lines for outermost white pixels BEFORE drawing lines
+                const analysisStart = performance.now();
                 analyzePerpendicularLines();
+                const analysisEnd = performance.now();
+                const analysisTime = analysisEnd - analysisStart;
                 
                 // Redraw the draggable points and line after analysis
+                const drawStart = performance.now();
                 drawRectifiedPointsAndLine();
+                const drawEnd = performance.now();
+                const drawTime = drawEnd - drawStart;
+                
+                // Performance measurement: End total edge detection timing
+                const edgeDetectionEnd = performance.now();
+                const totalEdgeDetectionTime = edgeDetectionEnd - edgeDetectionStart;
+                
+                // Store timing for analysis
+                window.performanceData.edgeDetectionTimes.push(totalEdgeDetectionTime);
+                window.performanceData.cannyTimes.push(cannyTime);
+                window.performanceData.analysisTimes.push(analysisTime);
+                window.performanceData.drawTimes.push(drawTime);
+                
+                // Log performance data every 10 frames for analysis
+                if (window.performanceData.edgeDetectionTimes && window.performanceData.edgeDetectionTimes.length % 10 === 0) {
+                    console.log(`🔍 Performance Analysis (Frame ${window.performanceData.edgeDetectionTimes.length}):`);
+                    console.log(`  📐 Rectification: ${getAverageTime(window.performanceData.rectificationTimes || []).toFixed(2)}ms`);
+                    console.log(`  🔍 Canny Edge Detection: ${getAverageTime(window.performanceData.cannyTimes || []).toFixed(2)}ms`);
+                    console.log(`  📊 Line Analysis: ${getAverageTime(window.performanceData.analysisTimes || []).toFixed(2)}ms`);
+                    console.log(`  🎨 Drawing: ${getAverageTime(window.performanceData.drawTimes || []).toFixed(2)}ms`);
+                    console.log(`  ⏱️  Total Edge Detection: ${getAverageTime(window.performanceData.edgeDetectionTimes || []).toFixed(2)}ms`);
+                }
             }
             
             function setupRectifiedCanvasInteraction() {
@@ -991,7 +1097,9 @@
                     // Simple stability logic
                     if (hasSignificantChange) {
                         // Over threshold = change detected, activate stability check
-                        console.log(`📊 Change detected: total=${changeResult.totalChange.toFixed(1)}px, max=${changeResult.maxChange.toFixed(1)}px (threshold: ${changeThreshold}px) - stability check activated`);
+                        const totalChangeStr = isFinite(changeResult.totalChange) ? changeResult.totalChange.toFixed(1) : '∞';
+                        const maxChangeStr = isFinite(changeResult.maxChange) ? changeResult.maxChange.toFixed(1) : '∞';
+                        console.log(`📊 Change detected: total=${totalChangeStr}px, max=${maxChangeStr}px (threshold: ${changeThreshold}px) - stability check activated`);
                         stabilityReached = false; // Reset stability state
                         consecutiveStableReadings = 0; // Reset counter
                         document.getElementById('status-emoji').textContent = '🔄';
@@ -1000,7 +1108,8 @@
                         // Under threshold = no change, count up if stability check is active
                         if (!stabilityReached) {
                             consecutiveStableReadings++;
-                            console.log(`✅ Stable reading ${consecutiveStableReadings}/${requiredStableReadings} (total change: ${changeResult.totalChange.toFixed(1)}px)`);
+                            const totalChangeStr = isFinite(changeResult.totalChange) ? changeResult.totalChange.toFixed(1) : '∞';
+                            console.log(`✅ Stable reading ${consecutiveStableReadings}/${requiredStableReadings} (total change: ${totalChangeStr}px)`);
                             
                             document.getElementById('status-emoji').textContent = '⚖️';
                             document.getElementById('status-text').textContent = 'STABILISIERE BILD';
@@ -1065,7 +1174,7 @@
             
             function detectSignificantChange(currentDistances, lastDistances) {
                 if (!lastDistances || currentDistances.length !== lastDistances.length) {
-                    return { isSignificant: true, totalChange: Infinity }; // Different lengths = significant change
+                    return { isSignificant: true, totalChange: Infinity, maxChange: Infinity }; // Different lengths = significant change
                 }
                 
                 // Calculate cumulative/total change across all distances
@@ -1268,6 +1377,88 @@
                 return stabilityReached;
             }
             
+            // Performance analysis helper functions
+            function getAverageTime(times) {
+                if (!times || !Array.isArray(times) || times.length === 0) return 0;
+                const sum = times.reduce((sum, time) => sum + (time || 0), 0);
+                return sum / times.length;
+            }
+            
+            function getMaxTime(times) {
+                if (!times || !Array.isArray(times) || times.length === 0) return 0;
+                const validTimes = times.filter(time => typeof time === 'number' && !isNaN(time));
+                return validTimes.length > 0 ? Math.max(...validTimes) : 0;
+            }
+            
+            function getMinTime(times) {
+                if (!times || !Array.isArray(times) || times.length === 0) return 0;
+                const validTimes = times.filter(time => typeof time === 'number' && !isNaN(time));
+                return validTimes.length > 0 ? Math.min(...validTimes) : 0;
+            }
+            
+            function getPerformanceReport() {
+                if (!window.performanceData) {
+                    console.log("No performance data available yet");
+                    return;
+                }
+                
+                const data = window.performanceData;
+                console.log("=== PERFORMANCE ANALYSIS REPORT ===");
+                console.log(`📊 Total frames analyzed: ${(data.edgeDetectionTimes || []).length}`);
+                console.log("");
+                console.log("📐 RECTIFICATION:");
+                console.log(`  Average: ${getAverageTime(data.rectificationTimes || []).toFixed(2)}ms`);
+                console.log(`  Min: ${getMinTime(data.rectificationTimes || []).toFixed(2)}ms`);
+                console.log(`  Max: ${getMaxTime(data.rectificationTimes || []).toFixed(2)}ms`);
+                console.log("");
+                console.log("🔍 EDGE DETECTION BREAKDOWN:");
+                console.log(`  Canny Edge Detection:`);
+                console.log(`    Average: ${getAverageTime(data.cannyTimes || []).toFixed(2)}ms`);
+                console.log(`    Min: ${getMinTime(data.cannyTimes || []).toFixed(2)}ms`);
+                console.log(`    Max: ${getMaxTime(data.cannyTimes || []).toFixed(2)}ms`);
+                console.log(`  Line Analysis:`);
+                console.log(`    Average: ${getAverageTime(data.analysisTimes || []).toFixed(2)}ms`);
+                console.log(`    Min: ${getMinTime(data.analysisTimes || []).toFixed(2)}ms`);
+                console.log(`    Max: ${getMaxTime(data.analysisTimes || []).toFixed(2)}ms`);
+                console.log(`  Drawing:`);
+                console.log(`    Average: ${getAverageTime(data.drawTimes || []).toFixed(2)}ms`);
+                console.log(`    Min: ${getMinTime(data.drawTimes || []).toFixed(2)}ms`);
+                console.log(`    Max: ${getMaxTime(data.drawTimes || []).toFixed(2)}ms`);
+                console.log("");
+                console.log("⏱️  TOTAL EDGE DETECTION:");
+                console.log(`  Average: ${getAverageTime(data.edgeDetectionTimes || []).toFixed(2)}ms`);
+                console.log(`  Min: ${getMinTime(data.edgeDetectionTimes || []).toFixed(2)}ms`);
+                console.log(`  Max: ${getMaxTime(data.edgeDetectionTimes || []).toFixed(2)}ms`);
+                console.log("");
+                console.log("🎯 BOTTLENECK ANALYSIS:");
+                const avgRect = getAverageTime(data.rectificationTimes || []);
+                const avgCanny = getAverageTime(data.cannyTimes || []);
+                const avgAnalysis = getAverageTime(data.analysisTimes || []);
+                const avgDraw = getAverageTime(data.drawTimes || []);
+                
+                if (avgRect > avgCanny && avgRect > avgAnalysis && avgRect > avgDraw) {
+                    console.log("  🚨 RECTIFICATION is the main bottleneck!");
+                } else if (avgCanny > avgAnalysis && avgCanny > avgDraw) {
+                    console.log("  🚨 CANNY EDGE DETECTION is the main bottleneck!");
+                } else if (avgAnalysis > avgDraw) {
+                    console.log("  🚨 LINE ANALYSIS is the main bottleneck!");
+                } else {
+                    console.log("  🚨 DRAWING is the main bottleneck!");
+                }
+                console.log("=== END REPORT ===");
+            }
+            
+            function clearPerformanceData() {
+                if (window.performanceData) {
+                    window.performanceData.rectificationTimes = [];
+                    window.performanceData.edgeDetectionTimes = [];
+                    window.performanceData.cannyTimes = [];
+                    window.performanceData.analysisTimes = [];
+                    window.performanceData.drawTimes = [];
+                    console.log("Performance data cleared");
+                }
+            }
+
             // Make functions globally accessible for debugging
             window.getPerpendicularResults = getAllPerpendicularResults;
             window.getLatestResults = getLatestPerpendicularResults;
@@ -1298,6 +1489,11 @@
             window.getPerformanceSettings = getPerformanceSettings;
             window.setEdgeDetectionInterval = setEdgeDetectionInterval;
             window.toggleReducedResolution = toggleReducedResolution;
+            window.toggleReducedRectificationResolution = toggleReducedRectificationResolution;
+            window.setRectificationResolutionFactor = setRectificationResolutionFactor;
+            window.toggleNearestNeighborInterpolation = toggleNearestNeighborInterpolation;
+            window.getPerformanceReport = getPerformanceReport;
+            window.clearPerformanceData = clearPerformanceData;
             
             function performRectification() {
                 if (selectedPoints.length !== 4) {
@@ -1438,27 +1634,53 @@
                 // Clear destination canvas
                 destCtx.clearRect(0, 0, destCanvas.width, destCanvas.height);
                 
+                // OPTIMIZATION: Use reduced resolution for rectification if enabled
+                let workingDestWidth = destCanvas.width;
+                let workingDestHeight = destCanvas.height;
+                let scaleBackUp = false;
+                let scaleX = 1.0;
+                let scaleY = 1.0;
+                
+                if (useReducedRectificationResolution) {
+                    workingDestWidth = Math.floor(destCanvas.width * rectificationResolutionFactor);
+                    workingDestHeight = Math.floor(destCanvas.height * rectificationResolutionFactor);
+                    scaleX = destCanvas.width / workingDestWidth;
+                    scaleY = destCanvas.height / workingDestHeight;
+                    scaleBackUp = true;
+                }
+                
                 // Get source image data
                 const sourceImageData = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
-                const destImageData = destCtx.createImageData(destCanvas.width, destCanvas.height);
+                const destImageData = destCtx.createImageData(workingDestWidth, workingDestHeight);
                 
                 // Use inverse transformation: for each destination pixel, find where to sample from in source
                 // This ensures we fill every pixel in the destination with proper interpolation
                 
-                for (let destY = 0; destY < destCanvas.height; destY++) {
-                    for (let destX = 0; destX < destCanvas.width; destX++) {
+                for (let destY = 0; destY < workingDestHeight; destY++) {
+                    for (let destX = 0; destX < workingDestWidth; destX++) {
+                        // Scale coordinates to full resolution for proper transformation
+                        const fullResX = destX * scaleX;
+                        const fullResY = destY * scaleY;
+                        
                         // Transform destination point back to source coordinates (trapezoid)
-                        const sourcePoint = transformPointInverse(destX, destY, inverseMatrix);
+                        const sourcePoint = transformPointInverse(fullResX, fullResY, inverseMatrix);
                         
                         // Check if source point is within bounds
                         if (sourcePoint.x >= 0 && sourcePoint.x < sourceCanvas.width &&
                             sourcePoint.y >= 0 && sourcePoint.y < sourceCanvas.height) {
                             
-                            // Get pixel from source with bilinear interpolation
-                            const pixel = getBilinearPixel(sourceImageData, sourcePoint.x, sourcePoint.y, sourceCanvas.width, sourceCanvas.height);
+                            // OPTIMIZATION: Choose interpolation method based on settings
+                            let pixel;
+                            if (useNearestNeighborInterpolation) {
+                                // Faster but lower quality - just round to nearest pixel
+                                pixel = getPixel(sourceImageData, Math.round(sourcePoint.x), Math.round(sourcePoint.y), sourceCanvas.width);
+                            } else {
+                                // Higher quality bilinear interpolation
+                                pixel = getBilinearPixel(sourceImageData, sourcePoint.x, sourcePoint.y, sourceCanvas.width, sourceCanvas.height);
+                            }
                             
                             // Set pixel in destination
-                            const destIndex = (destY * destCanvas.width + destX) * 4;
+                            const destIndex = (destY * workingDestWidth + destX) * 4;
                             destImageData.data[destIndex] = pixel.r;     // Red
                             destImageData.data[destIndex + 1] = pixel.g; // Green
                             destImageData.data[destIndex + 2] = pixel.b; // Blue
@@ -1467,8 +1689,22 @@
                     }
                 }
                 
-                // Put the transformed image data to destination canvas
-                destCtx.putImageData(destImageData, 0, 0);
+                if (scaleBackUp) {
+                    // Create a temporary canvas for the reduced resolution result
+                    const tempCanvas = document.createElement('canvas');
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCanvas.width = workingDestWidth;
+                    tempCanvas.height = workingDestHeight;
+                    tempCtx.putImageData(destImageData, 0, 0);
+                    
+                    // Scale back up to original size using canvas scaling (much faster than pixel-by-pixel)
+                    destCtx.imageSmoothingEnabled = true;
+                    destCtx.imageSmoothingQuality = 'low'; // Faster scaling
+                    destCtx.drawImage(tempCanvas, 0, 0, destCanvas.width, destCanvas.height);
+                } else {
+                    // Put the transformed image data directly to destination canvas
+                    destCtx.putImageData(destImageData, 0, 0);
+                }
             }
             
             function transformPointInverse(x, y, matrix) {
