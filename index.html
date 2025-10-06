@@ -196,6 +196,11 @@
                 
                 // Load saved points
                 loadSavedPoints();
+
+                setTimeout(() => {
+                    canvas.style.width = '100%';
+                    canvas.style.height = '100%';
+                }, 1000);
             };
             
             function startWebcam() {
